@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="3BAhxq3suYYQoXCZPF04b4">
+<head data-page-node-id="hy6Wof3s49uURtZN198jNW">
+<meta charset="UTF-8" data-page-node-id="U35ZDHG69cprIt5DaNhTKw">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="5gK3aiSDk5PoVT1TxSE2cq">
+<title>CPE Monitor · 界面预览</title>
+<style>
+  :root {
+    --bg: #0D0D10;
+    --panel: #16161A;
+    --raised: #1C1C21;
+    --track: #27272C;
+    --hairline: rgba(255,255,255,0.06);
+    --hairline-strong: rgba(255,255,255,0.10);
+    --t1: #F4F4F5;
+    --t2: #A1A1AA;
+    --t3: #6B6B73;
+    --accent: #D4D4D8;
+    --down: #60A5FA;
+    --up: #A78BFA;
+    --lv-excellent: #22D3EE;
+    --lv-good: #60A5FA;
+    --lv-fair: #FBBF24;
+    --lv-poor: #F87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+    background: #EDEDF0;
+    min-height: 100vh;
+    padding: 0 0 60px;
+    color: #1a1a1e;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 顶部模拟系统菜单栏 */
+  .menubar {
+    height: 26px; background: rgba(250,250,252,0.86);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    display: flex; align-items: center; padding: 0 10px;
+    font-size: 12px; color: #1a1a1e; gap: 14px;
+    position: sticky; top: 0; z-index: 5;
+  }
+  .menubar .apple { font-size: 13px; }
+  .menubar .spacer { flex: 1; }
+  .statusitem {
+    display: flex; align-items: center; gap: 4px;
+    padding: 1px 7px; border-radius: 4px;
+    background: rgba(0,0,0,0.10);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+  }
+
+  .stage { display: flex; gap: 40px; align-items: flex-start; padding: 34px 30px 0; flex-wrap: wrap; }
+
+  /* 弹出面板 */
+  .popover {
+    width: 372px; background: var(--bg);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.30), 0 0 0 1px rgba(0,0,0,0.10);
+    flex: none;
+  }
+  .pop-head {
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lv-excellent); flex: none; }
+  .head-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .head-title { font-size: 12px; font-weight: 500; color: var(--t1); }
+  .head-sub { font-size: 10px; color: var(--t3); }
+  .spacer { flex: 1; }
+  .icon-btn {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--t2); font-size: 12px;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.06); color: var(--t1); }
+
+  .body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .panel-label { font-size: 11px; font-weight: 500; color: var(--t3); }
+
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row .k { font-size: 12px; color: var(--t2); }
+  .row .grow { flex: 1; }
+  .row .v {
+    font-size: 12px; font-weight: 500; color: var(--t1);
+    text-align: right; white-space: nowrap;
+  }
+  .row .v.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .v.excellent { color: var(--lv-excellent); }
+  .v.good { color: var(--lv-good); }
+
+  .divider { height: 1px; background: var(--hairline); }
+
+  /* 签约速率 */
+  .split { display: flex; align-items: center; }
+  .split .side { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .split .sep { width: 1px; height: 22px; background: var(--hairline); margin: 0 10px; }
+  .side .cap { font-size: 11px; color: var(--t3); }
+  .side .num {
+    font-size: 14px; font-weight: 500; color: var(--t1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .side .num small { font-size: 10px; color: var(--t3); font-weight: 400; margin-left: 3px; }
+
+  /* 指标行 */
+  .metric { display: flex; flex-direction: column; gap: 5px; }
+  .metric .top { display: flex; align-items: center; gap: 8px; }
+  .metric .name { font-size: 12px; font-weight: 500; color: var(--t2); width: 42px; flex: none; }
+  .metric .val {
+    font-size: 13px; font-weight: 500; color: var(--t1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .badge {
+    font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap;
+  }
+  .badge.excellent { color: var(--lv-excellent); background: rgba(34,211,238,0.12); }
+  .badge.good { color: var(--lv-good); background: rgba(96,165,250,0.12); }
+  .badge.fair { color: var(--lv-fair); background: rgba(251,191,36,0.12); }
+  .badge.poor { color: var(--lv-poor); background: rgba(248,113,113,0.12); }
+
+  .bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; }
+  .bar > i.excellent { background: var(--lv-excellent); }
+  .bar > i.good { background: var(--lv-good); }
+  .bar > i.fair { background: var(--lv-fair); }
+  .bar > i.poor { background: var(--lv-poor); }
+
+  /* 实时网速 */
+  .rates { display: flex; align-items: flex-end; }
+  .rate { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .rate.right { align-items: flex-end; }
+  .rate .cap { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--t3); }
+  .rate .cap .arrow { font-size: 10px; font-weight: 700; }
+  .rate .big {
+    display: flex; align-items: baseline; gap: 3px;
+  }
+  .rate .big b {
+    font-size: 20px; font-weight: 500; color: var(--t1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .rate .big span { font-size: 10px; color: var(--t2); }
+  .spark { width: 100%; display: block; }
+  .spark-note {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--t3);
+  }
+  .spark-note .iface { color: var(--t2); }
+
+  /* 底部 */
+  .pop-foot {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-top: 1px solid var(--hairline);
+    font-size: 10px; color: var(--t3);
+  }
+  .pop-foot .quit { font-size: 11px; color: var(--t2); margin-left: auto; }
+
+  /* 设置页 */
+  .field {
+    background: var(--raised); border: 1px solid var(--hairline);
+    border-radius: 5px; padding: 5px 7px;
+    font-size: 12px; color: var(--t1);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .field.wide { flex: 1; }
+  .switch {
+    width: 30px; height: 17px; border-radius: 9px; background: var(--track);
+    position: relative; flex: none;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 13px; height: 13px; border-radius: 50%; background: #8b8b95;
+  }
+  .switch.on { background: rgba(96,165,250,0.45); }
+  .switch.on::after { left: 15px; background: #fff; }
+  .btn {
+    font-size: 11px; color: var(--t1); background: rgba(255,255,255,0.07);
+    border-radius: 5px; padding: 4px 9px;
+  }
+  .hint { font-size: 10px; color: var(--t3); line-height: 1.5; }
+  .ok-text { font-size: 11px; color: var(--lv-excellent); }
+
+  /* 右侧说明 */
+  .notes { max-width: 400px; padding-top: 6px; }
+  .notes h1 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .notes .sub { font-size: 13px; color: #5c5c66; margin-bottom: 18px; line-height: 1.6; }
+  .notes h2 {
+    font-size: 11px; font-weight: 600; color: #86868f;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 18px 0 8px;
+  }
+  .notes ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .notes li { font-size: 12.5px; color: #3a3a42; line-height: 1.6; display: flex; gap: 8px; }
+  .notes li b { color: #1a1a1e; font-weight: 500; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none; margin-top: 5px; }
+  .tabbar { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab {
+    font-size: 11.5px; padding: 5px 11px; border-radius: 6px;
+    background: rgba(0,0,0,0.06); color: #4a4a52; cursor: pointer;
+  }
+  .tab.active { background: #1a1a1e; color: #fff; }
+  .hidden { display: none; }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px; background: rgba(0,0,0,0.06);
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .section-title { font-size: 11px; font-weight: 500; color: var(--t3); }
+</style>
+</head>
+<body data-page-node-id="MMR4JPT6Ffe4Zhu4gH0cLS">
+
+<div class="menubar" data-page-node-id="GSbXKGedVEspDBa7Ku0wHa">
+  <span class="apple" data-page-node-id="jeiT9whHGWrHDYopOuc9P5"></span>
+  <span data-page-node-id="qPHVF1JcZsIzhZfPAHthTI">访达</span><span data-page-node-id="ilSMLSMaKZ6NG1ptZr6vFo">文件</span><span data-page-node-id="F4Jr5zoFv5O0AGFLWYfV9p">编辑</span><span data-page-node-id="t0A6m5tVPuSmdsHv3RnvQF">显示</span>
+  <span class="spacer" data-page-node-id="aULdCfxBjE4XCDyz2Bwd0P"></span>
+  <span class="statusitem" id="statusItem" data-page-node-id="mPYjyO8omKFW4j1S55utXP"></span>
+  <span data-page-node-id="j7dLe77NPNLGhbLShLciR3">11:28</span>
+</div>
+
+<div class="stage" data-page-node-id="siGRDFxjEIBCUcSOUTyFMC">
+
+  <div data-page-node-id="i6liU9XcfGBjcYcUUR7uIQ">
+    <div class="tabbar" data-page-node-id="rHcMgFq2hCjbEwO5e4sVmI">
+      <div class="tab active" data-tab="monitor" data-page-node-id="zaNghEnbCS0iW3vLGcK0P0">监控面板</div>
+      <div class="tab" data-tab="settings" data-page-node-id="kNNhKRFMqjUKI9iE9nDEh5">设置页</div>
+    </div>
+
+    <!-- ============ 监控面板 ============ -->
+    <div class="popover" id="view-monitor" data-page-node-id="CKSSBOhI2O1Xoz9ORcFt6s">
+      <div class="pop-head" data-page-node-id="in5bPEaVLooYCdzcnbizYu">
+        <span class="dot" data-page-node-id="FgxSACqvPHK8VgWi1vBc7I"></span>
+        <div class="head-text" data-page-node-id="Dc75XTm2yF6oCvsaZM7ZxR">
+          <span class="head-title" data-page-node-id="AA81YvI4D8ILStEqWtzifb">中国移动</span>
+          <span class="head-sub" data-page-node-id="4AMD92QaWSFysrGv3zxtb4">192.168.1.100 · 11:28:43</span>
+        </div>
+        <span class="spacer" data-page-node-id="wmThA3wQM0BwXb95EnGqxY"></span>
+        <span class="icon-btn" data-page-node-id="ds4e42seK3JpZZ3lHXpVJ4">⟳</span>
+        <span class="icon-btn" data-page-node-id="CJ0gUiyxHphqiYuYkYMmpR">⚙</span>
+      </div>
+
+      <div class="body" data-page-node-id="VNjiMxGBbOnMAYB1XlpEUn">
+        <!-- 网络信息 -->
+        <div class="panel" data-page-node-id="BstyC0jWmcRs19bLdpytBB">
+          <div class="panel-label" data-page-node-id="4hnAbwfgBghqHzltH0hJSU">网络信息</div>
+          <div class="row" data-page-node-id="tLcDwHxkqsCGCrEMu7DBkY"><span class="k" data-page-node-id="5cdKVsK35uFhdXr5s5XNrT">运营商</span><span class="grow" data-page-node-id="5mpMR0ossQPAfq3ASqaSIm"></span><span class="v" data-page-node-id="kPgVh4VqbYTHGa5TRJgDUx">中国移动</span></div>
+          <div class="row" data-page-node-id="OBu5c7COZ7K0dqtthXy3nk"><span class="k" data-page-node-id="gnBQv2zQoPyiRdpTh0CUS7">网络模式</span><span class="grow" data-page-node-id="P1KSGQAOiQZVZWpZVUWU1D"></span><span class="v excellent" data-page-node-id="MUR4d8g0rDrgOLXLoWQWF6">5G SA</span></div>
+          <div class="row" data-page-node-id="mIMYA3hH7M8vX8ueP2XnS2"><span class="k" data-page-node-id="cKmNef1WLiBHzWeKyuYfVn">工作频段</span><span class="grow" data-page-node-id="7juuERm1ae0CUOiMec6Rmz"></span><span class="v" data-page-node-id="Uae9ZAXu86qiOIxTlBLxFV">n78</span></div>
+          <div class="row" data-page-node-id="RFLf0sJL9nsGhHETRzHlE0"><span class="k" data-page-node-id="HQFlZm2pKLzJx4SxIAo9R4">QCI 等级</span><span class="grow" data-page-node-id="2n2Blp5XlCLUzFxdjVkVfK"></span><span class="v" data-page-node-id="tbnbWxWt9MenQuuQlD7pCZ">6</span></div>
+          <div class="divider" data-page-node-id="PfhzobzvqtYDEBLgIBlTOs"></div>
+          <div class="split" data-page-node-id="hNKpr2tBXue2JJQxNgwxsU">
+            <div class="side" data-page-node-id="MjifkuYdv2q5M854j3fAeH">
+              <span class="cap" data-page-node-id="wJuO6XUFZF9MypzrXHNTge">签约下行</span>
+              <span class="num" data-page-node-id="QHKurES3E4eqjTUvWY4huz">1000<small data-page-node-id="Zr8LM8SxqtzCzMVrO69ZmR">Mbps</small></span>
+            </div>
+            <div class="sep" data-page-node-id="chI7KlomKkxmXd1eElX6yw"></div>
+            <div class="side" data-page-node-id="gGTu4ZK9jHj0nZs6yBwQdM">
+              <span class="cap" data-page-node-id="f4PgqzYsWxVMyq1mRI87On">签约上行</span>
+              <span class="num" data-page-node-id="UEpbpOUgg1tpfEXbHasl16">200<small data-page-node-id="Jt7WJCs5sksyfrARGZyGUk">Mbps</small></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 无线信号 -->
+        <div class="panel" data-page-node-id="3vH91EMzJoTEVuGqFLbQVT">
+          <div class="panel-label" data-page-node-id="QfyfTDN2uMj2U1RiV8EBFT">无线信号</div>
+          <div class="metric" data-page-node-id="ij11DzQqEOd6gS9BtCasAm">
+            <div class="top" data-page-node-id="NCHafbHK20CmyxWAuc6q1j">
+              <span class="name" data-page-node-id="HLDrA59Hf7k5oAJ06RztRO">RSRP</span><span class="val" data-page-node-id="dyprASJ0wkvAm0xVSnC7S5">-78 dBm</span>
+              <span class="grow" style="flex:1" data-page-node-id="oAU6ksTDiHO3u41auKw4bO"></span><span class="badge good" data-page-node-id="JXCYUYQGFWNkKHMIF2A4Vz">良好</span>
+            </div>
+            <div class="bar" data-page-node-id="Cs5BL51aNbPvgu1E6YOAP6"><i class="good" style="width:70%" data-page-node-id="BR1ZE7xkVs1FfEJttv3Rva"></i></div>
+          </div>
+          <div class="metric" data-page-node-id="fx9jscpbcaEVN9IDGMNZxB">
+            <div class="top" data-page-node-id="6frwM6uydgpM4nCxKzYrbR">
+              <span class="name" data-page-node-id="6zyvTzjROZnovhoE1wnDJB">SINR</span><span class="val" data-page-node-id="BauFn7qrcYpL3Y7NuWMdFb">22.5 dB</span>
+              <span class="grow" style="flex:1" data-page-node-id="XsORYk8gvJ7gxBc2E1t9a0"></span><span class="badge excellent" data-page-node-id="GsdvWmsxfAfxAfsKNyclaH">极佳</span>
+            </div>
+            <div class="bar" data-page-node-id="RkeLEIZnhC4RexovXCaaBF"><i class="excellent" style="width:81%" data-page-node-id="0PzGAyJcDUlhegjqaluiEF"></i></div>
+          </div>
+          <div class="metric" data-page-node-id="wNM1LtmFrEwcWp99E5zZew">
+            <div class="top" data-page-node-id="j8hMTK1kZLphgEcRUpkFnB">
+              <span class="name" data-page-node-id="URBoT5tl4HvwEXDZONr0Gd">RSRQ</span><span class="val" data-page-node-id="PZX5yrumjGxvbRpuxWQIgX">-11 dB</span>
+              <span class="grow" style="flex:1" data-page-node-id="BMdznbyqNlxyRWMEvws4Ee"></span><span class="badge good" data-page-node-id="ejDCD2v1lVwHgUNvFTskqb">良好</span>
+            </div>
+            <div class="bar" data-page-node-id="DWnqKzIuz98jCDAmizCkLg"><i class="good" style="width:60%" data-page-node-id="Gd7BnYpQCtMPDNi6SYEXFp"></i></div>
+          </div>
+          <div class="divider" data-page-node-id="OWZszPFIYs6DtgEuLtI1Ko"></div>
+          <div class="row" style="gap:16px" data-page-node-id="iTVeW6XmDg9vLannSEERhK">
+            <span class="k" data-page-node-id="B2wFXnyGelh1sYnoa86F0B">PCI</span><span class="v" data-page-node-id="Hr6pvm5Ne6woUbVuxwhDfL">431</span>
+            <span style="flex:1" data-page-node-id="IjyJkeM8sODm3gwu1mAfxn"></span>
+            <span class="k" data-page-node-id="sZsVxBT0gtM40TWxBtQ9Z5">ARFCN</span><span class="v" data-page-node-id="bPFdMiXuHQnidRLL2MWVTU">633984</span>
+          </div>
+        </div>
+
+        <!-- 实时网速 -->
+        <div class="panel" data-page-node-id="TbChW82wRKpiHPKdu4f4Rr">
+          <div class="panel-label" data-page-node-id="mbSEN7dwC18GCXxBqAwyTD">实时网速</div>
+          <div class="rates" data-page-node-id="GDhOjCYWVH91tee17GhA09">
+            <div class="rate" data-page-node-id="g3eD1dpDRvSR1RbxrJBG4n">
+              <span class="cap" data-page-node-id="Ib5CNXfFd3TQRmSFowp3E8"><span class="arrow" style="color:var(--down)" data-page-node-id="AczNgLiZgvEgAjBcHbEBDL">▼</span>下载</span>
+              <span class="big" data-page-node-id="Rdk0uEMavVx3tcYoCxJODu"><b id="downVal" data-page-node-id="pBrJBtg0G93qtLhlQCt99N">12.40</b><span data-page-node-id="ZH2ZHhPf5OO4jGpCYo1esj">MB/s</span></span>
+            </div>
+            <div class="rate right" data-page-node-id="A7reVmbQWGxDYeu8CfDcm7">
+              <span class="cap" data-page-node-id="zqkXUzBlla9X5qllsHLSCC"><span class="arrow" style="color:var(--up)" data-page-node-id="TX5VrocYsxDCz633M1V4fW">▲</span>上传</span>
+              <span class="big" data-page-node-id="AA8EdIkDR4E9U9wG5AkxCN"><b id="upVal" data-page-node-id="utFgkl9Ca5QFVKvt5ypqaR">892</b><span data-page-node-id="IoyrnUln2XmrFTHUQxkfAA">KB/s</span></span>
+            </div>
+          </div>
+          <svg class="spark" id="sparkDown" height="34" preserveAspectRatio="none" data-page-node-id="O8CMit0fmBuNQVdJGMwNah"></svg>
+          <svg class="spark" id="sparkUp" height="20" preserveAspectRatio="none" data-page-node-id="VLpCSkm6rEu6eUecNftVQW"></svg>
+          <div class="spark-note" data-page-node-id="xCrvjhgpszqCMjUOv4xglC">
+            <span data-page-node-id="c6CxgEC8lu31t9lUsQq87J">采样 <span class="iface" data-page-node-id="jXhzYg5wcl13XBAN1wv4Tn">sipa_eth0</span></span>
+            <span data-page-node-id="KVdcCr3GW3Wzk0HGgiVBCk">近 48 次 · 上曲线=下载 下曲线=上传</span>
+          </div>
+        </div>
+
+        <!-- 流量统计 -->
+        <div class="panel" data-page-node-id="CEay3SkHrDGAwSoos0NBd3">
+          <div class="panel-label" data-page-node-id="1K93kPEgpn2FdwtV8YfShW">流量统计</div>
+          <div class="row" data-page-node-id="6bvZkHo8eBv2uLya7FvHyR"><span class="k" data-page-node-id="yCF2BZET7vNoWvuvj2vGmV">套餐类型</span><span class="grow" data-page-node-id="slD2lDZbQcNMTWakJN1fmY"></span><span class="v" data-page-node-id="NeIQhuqHpwxfzqhruwOXEW">固定流量</span></div>
+          <div class="metric" data-page-node-id="j8jSSixYYPJRWVku1qCVcq">
+            <div class="top" data-page-node-id="3rEMf9CFFG3jsBKVFnTDnT">
+              <span class="k" style="font-size:12px" data-page-node-id="snIgeMVJ24PVak2z7kJ0hK">本月已用</span>
+              <span class="grow" style="flex:1" data-page-node-id="2rzGiauN1UQvUV6IHW2NFB"></span>
+              <span class="v mono" data-page-node-id="pCaxBCiBYiZ7X8BSOkNyif">42.10 GB</span>
+              <span style="font-size:11px;color:var(--t3)" data-page-node-id="xmafKu6fcW0AXCkYatdkLx">/ 100.00 GB</span>
+            </div>
+            <div class="bar" data-page-node-id="TlXa66h8eDYJghOGYsHnCG"><i class="good" style="width:42%" data-page-node-id="uiiKAMFPKeazE2PyM3Ly4Y"></i></div>
+          </div>
+          <div class="divider" data-page-node-id="BGaVdDkvtnFRaTZIYKLB5Q"></div>
+          <div class="split" data-page-node-id="TC3oDx9sTZUFJYJEfaD3mb">
+            <div class="side" data-page-node-id="tSZ0XOGvCI0YkXhcyfOBR9">
+              <span class="cap" data-page-node-id="dPVHWXevqbjvtxmjPKMNez">当日已用</span>
+              <span class="num" data-page-node-id="yH5jkfI3TJ7mJVxFDwPDSA">1.24<small data-page-node-id="d7YZCnKQBTD840S6NYxnAp">GB</small></span>
+            </div>
+            <div class="sep" data-page-node-id="5QaIBKs0AxAR2KMYslelKs"></div>
+            <div class="side" style="align-items:flex-end" data-page-node-id="QGNf0WQ8u7JFWXLQxkIVpN">
+              <span class="cap" data-page-node-id="AFWwnZpMILGKaciM4CWnIn">累计</span>
+              <span class="num" style="color:var(--t2)" data-page-node-id="Mu5gF1eF7r64mMSfIVIGjc">41.90<small data-page-node-id="G38yd6yQHI5p3eqnv3Vn4w">GB</small></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 硬件状态 -->
+        <div class="panel" data-page-node-id="TKL7env76PKgEtycJy3yfc">
+          <div class="panel-label" data-page-node-id="gkVL5ImeykeKHPCvRDcQnU">硬件状态</div>
+          <div class="metric" data-page-node-id="JbIwXtwy0kDpd7csAvbBCI">
+            <div class="top" data-page-node-id="ZU606pJwy0Vla6mEXnxzQW">
+              <span class="name" data-page-node-id="VCHTFfMwvOLyXVKvsfJmUp">CPU</span><span class="val" data-page-node-id="MhGtkNHkzaE78aPdjXl99D">28.4%</span>
+              <span class="grow" style="flex:1" data-page-node-id="xXTw3SoJsCqLHmbI2xQvii"></span><span class="badge good" data-page-node-id="KdVcF7INYNQAUkHCc3mVJn">良好</span>
+            </div>
+            <div class="bar" data-page-node-id="3OEulYnwNXsFHfaoXzbDoP"><i class="good" style="width:28%" data-page-node-id="X04TfXthSdDyCw00FnQBdR"></i></div>
+          </div>
+          <div class="metric" data-page-node-id="JuuX3Vn9ecoThkqGQPKDzV">
+            <div class="top" data-page-node-id="J980oMJhIQEYbQU0nld51U">
+              <span class="name" data-page-node-id="hZll1pQny3YrZs1y9BkFDK">内存</span><span class="val" data-page-node-id="5TWksWpNb1P34EHPagNDZr">57.6%</span>
+              <span class="grow" style="flex:1" data-page-node-id="PBm6kDkRDV6hlz7ZE3QsvK"></span><span class="badge fair" data-page-node-id="cfeB5zhryii7jU1CAxPKmL">一般</span>
+            </div>
+            <div class="bar" data-page-node-id="lp54D6dLfG8gayHuQJqGCT"><i class="fair" style="width:58%" data-page-node-id="g8GweWnnGHkavRTfMJVGMO"></i></div>
+          </div>
+          <div class="divider" data-page-node-id="w3k4EIq9TOteKTIrBnkjoG"></div>
+          <div class="split" data-page-node-id="l2TGxuCmjqYB3a9nWZbDDU">
+            <div class="side" data-page-node-id="F4KHDKpqtHZ3X0VXBnF51a">
+              <span class="cap" data-page-node-id="N1CUFYlyJwxUkq8xIrwvkq">芯片温度</span>
+              <span class="num" style="color:var(--lv-excellent)" data-page-node-id="8HCWM7duucbZgLPrCAvpH9">46.2<small data-page-node-id="E49jnjC92gum7kguZY8KOT">°C</small></span>
+            </div>
+            <div class="sep" data-page-node-id="UFCkkbi2N2L5VuqhPMLlSQ"></div>
+            <div class="side" style="align-items:flex-end" data-page-node-id="ayaGj7jFfWjFHXAVtCQ9od">
+              <span class="cap" data-page-node-id="TeAG6CxBQMsHUjfSb77VjR">运行时长</span>
+              <span class="num" style="color:var(--t2)" data-page-node-id="5n4elW6Y4zegLUr5dLA5Q1">4<small data-page-node-id="cKtgANJa9lPCgA5FCnqsBx">天 7 小时</small></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pop-foot" data-page-node-id="DZopkKSToH7lcHIYTpHSwe">
+        <span data-page-node-id="cKMkBMFEcdgJK45VoHA4Un">演示模式</span>
+        <span class="quit" data-page-node-id="5hHjYnPLep5FEinR7sczEH">退出</span>
+      </div>
+    </div>
+
+    <!-- ============ 设置页 ============ -->
+    <div class="popover hidden" id="view-settings" data-page-node-id="Ltf8NFPThEvmlSusIgBqod">
+      <div class="pop-head" data-page-node-id="vyMImj6ZPVjGEB4MQTbRmw">
+        <span class="dot" data-page-node-id="WPQlvA7HnRCgUvBB6NgqS2"></span>
+        <div class="head-text" data-page-node-id="cOe9JM7GxVFBJOe11CnzMQ">
+          <span class="head-title" data-page-node-id="6QGV5oT2oc6Z4nvh4NaUf4">中国移动</span>
+          <span class="head-sub" data-page-node-id="NMe6dCyphO7Ebgc2TMttMI">192.168.1.100 · 11:28:43</span>
+        </div>
+        <span class="spacer" data-page-node-id="srpEDg7O8UONBNx3seYw4q"></span>
+        <span class="icon-btn" data-page-node-id="n7lsJbBWPWNFiCbmbvIY3T">☰</span>
+      </div>
+
+      <div class="body" data-page-node-id="5s4gCEhpvM4owpeGoUbevS">
+        <div class="panel" data-page-node-id="vR8FleypBUnAyd3baY7xGb">
+          <div class="panel-label" data-page-node-id="P9ACcK2wQ9GtUtZU7X7icM">设备连接</div>
+          <div class="row" data-page-node-id="HAEBqDjYjLw6AvWZe1Pyyr"><span class="k" style="width:46px" data-page-node-id="XsFrShPRVgL8GmjLa9kMPX">地址</span><span class="field wide" data-page-node-id="arSM3YCDFSTWyZGPXYq9PS">192.168.1.100</span></div>
+          <div class="row" data-page-node-id="vEGw7umUlwdevid4Gs6ij1">
+            <span class="k" style="width:46px" data-page-node-id="Th35C2DBk74uo6CgBIt7OF">端口</span>
+            <span class="field" style="width:86px" data-page-node-id="B5NVkS3B3bR14JZSm5Sh9A">6677</span>
+            <span class="k" style="font-size:11px" data-page-node-id="dxceXgG5rEupwOs5lzXHVD">HTTPS</span>
+            <span class="switch" data-page-node-id="UmAtjEGyqptHct7mv9yiHY"></span>
+            <span class="grow" data-page-node-id="NeTRdRAYtVQQbmdyNA8XVW"></span>
+          </div>
+          <div class="row" data-page-node-id="cjxF0zEKvFkpO7ZmFOhODS">
+            <span class="k" style="width:46px" data-page-node-id="GchxQbmXvPSkTzGK7UJeye">间隔</span>
+            <div class="bar" style="flex:1;height:5px" data-page-node-id="fw8TN7WFvPmy3IVuRh5F38"><i class="good" style="width:22%" data-page-node-id="Q39ETVn0adq7Yq0hvHSRHG"></i></div>
+            <span class="v mono" style="width:38px" data-page-node-id="0ylbBSCaLkgR3q2od1c2Ei">2.0s</span>
+          </div>
+          <div class="row" data-page-node-id="nkI46eyURS5I041fFMgMfm">
+            <span class="btn" data-page-node-id="JMrDGWfuflv1jDIhWcqzg7">测试连接</span>
+            <span class="ok-text" data-page-node-id="AsHz83qGsenTc2obrrAkDQ">已连通 · UDX710-CPE</span>
+            <span class="grow" data-page-node-id="q58EQVN8Hrkl1QuwCHrwcv"></span>
+          </div>
+        </div>
+
+        <div class="panel" data-page-node-id="4PqOMvVwomXhxaJ72iK2XJ">
+          <div class="panel-label" data-page-node-id="RD9aawVWN70DfkpJrzeTBk">后台密码</div>
+          <div class="hint" data-page-node-id="LwNjqeMmhpA5OsX4tDvmEU">实时速率走 /api/netif/stats，需要登录令牌。其余数据免登录直读。</div>
+          <div class="row" data-page-node-id="h75JkdfVQyxJ96TuRFLQTp">
+            <span class="field wide" data-page-node-id="FRXw7TWWQpSd2pAC7F93BH">••••••••</span>
+            <span class="k" style="font-size:11px" data-page-node-id="53UlwnHyOzplVErXx5Gr01">记住</span>
+            <span class="switch on" data-page-node-id="l6Tdr4FhhbOKy7fVvPK8zv"></span>
+          </div>
+          <div class="row" data-page-node-id="lBe94IJMI4AGL60rhR41vF">
+            <span class="btn" data-page-node-id="J6m1UXXE2dWDV5wNU7R6tP">验证登录</span>
+            <span class="k" style="font-size:11px" data-page-node-id="9nwsPgMOKijBtxkNz7qrO7">清除已存密码</span>
+            <span class="grow" data-page-node-id="D9O4GvV7OiH90CtQEAWjsw"></span>
+          </div>
+        </div>
+
+        <div class="panel" data-page-node-id="Qu7FVINQndeq8I1yWC0GJh">
+          <div class="panel-label" data-page-node-id="VCwttlgT9TU8q0PwRqcGIH">菜单栏显示</div>
+          <div class="row" data-page-node-id="vlTBR4wxQd131CnpE7eohV">
+            <span class="k" style="width:46px" data-page-node-id="ju4wLyhxuTtmVP5IbsqTrK">内容</span>
+            <span class="field wide" style="font-family:inherit" data-page-node-id="n25ZbvdXhoPOX8IrCu40AH">实时速率 ▾</span>
+          </div>
+          <div class="row" data-page-node-id="oqIPHPgMXGSkO7nj6BRaS3">
+            <span class="k" style="font-size:11px" data-page-node-id="FBndoTE3wQ1QnKHuGED72s">明文显示 IMEI / ICCID</span>
+            <span class="grow" data-page-node-id="x8z94zY4JpXjUHDg77HluU"></span>
+            <span class="switch" data-page-node-id="qlfGExhG0BuuFVA5M6C6o6"></span>
+          </div>
+        </div>
+
+        <div class="panel" data-page-node-id="nJssETKN7shUfJgHI5puue">
+          <div class="panel-label" data-page-node-id="LF9LrEQOybBBxUNBn3MvPT">套餐设置</div>
+          <div class="hint" data-page-node-id="F9ZBDCFEmeQAyZTU55ntKb">设备侧未上报账单周期时，本月/当日由 vnstat 明细提供。</div>
+          <div class="row" data-page-node-id="vt9WCiiJyK8PL6ljGqyXsu">
+            <span class="k" style="font-size:11px" data-page-node-id="k6Av56iKdzx6Bj4DrhcbC0">不限量套餐</span>
+            <span class="grow" data-page-node-id="k1KNAUGyby3BceLZI9UfDd"></span>
+            <span class="switch" data-page-node-id="FkcjpqcTIAejeat8kFDUzj"></span>
+          </div>
+          <div class="row" data-page-node-id="JOdiZFaj9sMFaZWz1VMRjn">
+            <span class="k" style="width:56px" data-page-node-id="DUliZM3mEErx4wbQWdKy5Q">套餐总量</span>
+            <span class="field" style="width:86px" data-page-node-id="uK4m6FXuqGQEKTItLpJCy1">100</span>
+            <span class="k" style="font-size:11px" data-page-node-id="KldNtYhS2ZSfFVMUsiYI1L">GB</span>
+            <span class="grow" data-page-node-id="NSKR7q9M6XYjnqB8FJRSJu"></span>
+          </div>
+        </div>
+
+        <div class="panel" data-page-node-id="8JtCfkbWEjnmiy0zbywF2U">
+          <div class="panel-label" data-page-node-id="toqiFeRI4o7c6TDW49K8oi">高级</div>
+          <div class="row" data-page-node-id="doWMJwcYgtypcVerVbT8pD"><span class="k" style="width:46px" data-page-node-id="9RZdBDJHI8i3xk0LtxGxO2">网卡</span><span class="field wide" data-page-node-id="JF68i1Obn15lnH7Z59ZPOj">自动</span></div>
+          <div class="hint" data-page-node-id="5UXypMjbM05BWgwmejRjRF">设备上的网卡：lo、sipa_eth0、wlan0</div>
+          <div class="row" data-page-node-id="v6ak8FFBVYOkwrmdhailI1">
+            <span class="k" style="font-size:11px" data-page-node-id="SrDwW3Qer8DmoFdDzkV3EK">离线演示模式（用假数据）</span>
+            <span class="grow" data-page-node-id="VXHqgEJvYMryDowm2NVeOq"></span>
+            <span class="switch" data-page-node-id="QRssvwaV5juphAC8Tfr0qJ"></span>
+          </div>
+          <div class="row" data-page-node-id="r4v9K8ffjDYCbU67F9ipYh">
+            <span class="btn" data-page-node-id="RYUxikrWnERS27jXpqX6CM">重连设备</span>
+            <span class="k" style="font-size:11px" data-page-node-id="T3xVgHRcnGgXIFCEMPui8W">返回监控</span>
+            <span class="grow" data-page-node-id="cqUiWZRITrQ2VAG9HkQpdb"></span>
+            <span class="hint" data-page-node-id="X2Nj3Rzp3hu9zxRAHZDPxF">v0.1.0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pop-foot" data-page-node-id="1B7hcyk6PdgI2kvsJuyci6"><span data-page-node-id="ma79ZEPUKdZzKlw8HGJtWr"></span><span class="quit" data-page-node-id="3EduLV6EbFwkqqnf1giqL6">退出</span></div>
+    </div>
+  </div>
+
+  <!-- ============ 说明 ============ -->
+  <div class="notes" data-page-node-id="2l5EuwIgV3hfXP9wX0OGwL">
+    <h1 data-page-node-id="9HfihqyOQllhOAEnHBQIUQ">CPE Monitor</h1>
+    <div class="sub" data-page-node-id="Fux20Qf7oHPl7VY4LLYJhh">
+      菜单栏常驻的 5G CPE / 插卡路由器实时监控面板。<br data-page-node-id="VnLSf9HALICf9g531HZE5O">
+      数据源为设备上运行的 <code data-page-node-id="mmsXLWJ3h8Km426yhBc2a3">UDX710-TOOLS</code> HTTP 接口。
+    </div>
+
+    <h2 data-page-node-id="6bVHBz11uGt5HEk50Sq6hG">五个模块与数据来源</h2>
+    <ul data-page-node-id="SQlxarBk8yXONrAURG2rNs">
+      <li data-page-node-id="nsPerHXfWrsVmDZrYj5GTE"><span class="swatch" style="background:var(--lv-excellent)" data-page-node-id="8qXhEOEVVYKqoWpaEslvOO"></span><span data-page-node-id="9Yu2uIL3OCf8a0U2Q9QmTp"><b data-page-node-id="IB0CsbWOGHjdZMfX8JSDD9">网络信息</b> · 运营商、网络模式、频段、QCI、签约上下行 — <code data-page-node-id="yX9gqXfhlaqTrZfO9P0rjV">GET /api/info</code></span></li>
+      <li data-page-node-id="YOmJfiPy4tfxW2C75GLpHK"><span class="swatch" style="background:var(--lv-good)" data-page-node-id="67lEA1uPmynEgtXoVp94fT"></span><span data-page-node-id="pZz04q7k5FDDQXM7UupRpG"><b data-page-node-id="buzEv57gVglxPGFX5T2ANB">无线信号</b> · RSRP / SINR / RSRQ 三项带评级与进度条 — <code data-page-node-id="KlK4jAWlv8cJA55jvj0TUO">GET /api/current_band</code></span></li>
+      <li data-page-node-id="R39HD5GgkpuBWc56gBitxQ"><span class="swatch" style="background:var(--down)" data-page-node-id="DBj8bCHiGeGqrxrLmoDgl7"></span><span data-page-node-id="9SDGd2cfMvvRoJ4Ap0mFLt"><b data-page-node-id="DOgQGItZ4v4yAESrp4BBMf">实时网速</b> · 上下行速率 + 折线波形（48 个采样点滚动）— <code data-page-node-id="JzGL7CMA38qqJoiWNkpBt4">POST /api/netif/stats</code></span></li>
+      <li data-page-node-id="hzFNiLwuRwkQSDv1S4z0u2"><span class="swatch" style="background:var(--lv-fair)" data-page-node-id="sOq7Nbnw7hDafdSXWNjwb6"></span><span data-page-node-id="hYeTyKDS4XpnpXMG1rokHC"><b data-page-node-id="VrbHU8gX7s1C8ALA8XXnTJ">流量统计</b> · 套餐类型、本月、当日、累计 — <code data-page-node-id="GR1d5vXxJs3vfEBnB5RiH6">/api/get/set</code> + vnstat 明细</span></li>
+      <li data-page-node-id="T0GZkWVStM9HiMyAGniDgA"><span class="swatch" style="background:var(--up)" data-page-node-id="jLBC2jA1pK0yApzFVHoxZN"></span><span data-page-node-id="5xvoYZJbkFAMRKrZ5fcChM"><b data-page-node-id="ihDyKCETHojbnPzFvFPPNt">硬件状态</b> · CPU、内存、芯片温度、运行时长 — <code data-page-node-id="QanHJLbQ9s0NJrXsE5rxUE">GET /api/info</code></span></li>
+    </ul>
+
+    <h2 data-page-node-id="W1lAEEXKn3hDvzOOZJGtSN">配色规范</h2>
+    <ul data-page-node-id="ocqnlMNAOBWDmAIXoieZjB">
+      <li data-page-node-id="c4ghT0XAs91j6x3IqpGith"><span class="swatch" style="background:var(--bg);box-shadow:0 0 0 1px rgba(0,0,0,0.15)" data-page-node-id="w9BSyznMxugLsUvhX1Am1y"></span><span data-page-node-id="iBQqFkv5Q0y2IZQ9QVdbCN">底色 <code data-page-node-id="PU5qQcinLl1E1vvqofk6cd">#0D0D10</code>，面板实色 <code data-page-node-id="2uBh7BNutZ8q6kX7xole3Z">#16161A</code>，描边为白色 6%</span></li>
+      <li data-page-node-id="bZKAAI1Ln6c6CDiATgHl7c"><span class="swatch" style="background:var(--lv-excellent)" data-page-node-id="YLPYr71T86DR7Kj3FXQjrv"></span><span data-page-node-id="jTORALmhlA2wV7CVDChocL">评级走冷色递进：极佳 <code data-page-node-id="SLYtuo3oDHRpejjh58Bsec">#22D3EE</code> → 良好 <code data-page-node-id="8kOhEg9E6RNYgBrePM3eMl">#60A5FA</code> → 一般 <code data-page-node-id="UXSnT0NGdL1p0m3d9GnzBJ">#FBBF24</code> → 较差 <code data-page-node-id="G1gCwIClhjPr579DN7DNlr">#F87171</code></span></li>
+      <li data-page-node-id="jQFxqoxjwbAxoHC3iPesoD"><span class="swatch" style="background:var(--down)" data-page-node-id="odfiSeS6FzgG4K6k4sA6oo"></span><span data-page-node-id="xNq6b5UGwuWcaSkoZXMNrY">下载 <code data-page-node-id="TvZXpj6C4hySBNOTPyZ66p">#60A5FA</code>，上传 <code data-page-node-id="KdQ0HR5zGn6xPu5gGoFBok">#A78BFA</code>，不用发光与渐变底</span></li>
+    </ul>
+
+    <h2 data-page-node-id="BzEWCcBfjDWOupWD93xRxa">与真实 App 的差异</h2>
+    <ul data-page-node-id="FkuYHo4zEDGpAPvhftDJwl">
+      <li data-page-node-id="7OHE1JpjQFgBR8Tpy4kbrv">这是<b data-page-node-id="ofCVMZWeS7WOvFcRzvdDPe">静态预览</b>，数值是写死的示例数据，用来确认版式与配色。</li>
+      <li data-page-node-id="5tcqcXvZoMTcq6i36Di3Zq">真实 App 里波形每 2 秒推一个采样点，进度条与评级随数据实时变化。</li>
+      <li data-page-node-id="mULlZKybNQtB1M4AXXSZOR">字体用系统 SF Pro，与原生渲染一致；两侧留白与圆角已按 <code data-page-node-id="HggR6dzaM7ugDV7IKFww10">372px</code> 面板宽度对齐。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // 菜单栏标题
+  document.getElementById('statusItem').innerHTML =
+    '<span style="font-size:11px">📶</span>&nbsp;↓12.4M ↑892K';
+
+  // 生成折线波形（与 App 里 Sparkline 的算法一致：按峰值归一化 + 面积填充）
+  function sparkline(el, data, color, peakShared) {
+    const w = el.clientWidth || 348;
+    const h = parseInt(el.getAttribute('height'), 10);
+    el.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    const peak = Math.max(...data, peakShared || 0) || 1;
+    const step = w / (data.length - 1);
+    const pts = data.map((v, i) => {
+      const r = Math.min(1, Math.max(0, v / peak));
+      return [i * step, h - r * (h - 2) - 1];
+    });
+
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' ');
+    const area = 'M0 ' + h + ' ' + line.slice(1) + ' L' + w + ' ' + h + ' Z';
+    const gid = 'g-' + el.id;
+
+    el.innerHTML =
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.22"/>' +
+      '<stop offset="100%" stop-color="' + color + '" stop-opacity="0"/>' +
+      '</linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+      '<path d="' + line + '" fill="none" stroke="' + color + '" stroke-width="1.4" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + pts[pts.length - 1][0].toFixed(2) + '" cy="' + pts[pts.length - 1][1].toFixed(2) +
+      '" r="2" fill="' + color + '"/>';
+  }
+
+  // 造一段接近真实的速率波动
+  const down = [], up = [];
+  for (let i = 0; i < 48; i++) {
+    const base = 4200000;
+    const burst = Math.abs(Math.sin(i / 5)) * 9000000;
+    const jitter = ((i * 7919) % 1000) / 1000 * 2400000;
+    down.push(base + burst + jitter);
+    up.push(320000 + Math.abs(Math.cos(i / 8)) * 900000);
+  }
+
+  const peakAll = Math.max(...down, ...up);
+  sparkline(document.getElementById('sparkDown'), down, '#60A5FA', peakAll);
+  sparkline(document.getElementById('sparkUp'), up, '#A78BFA', peakAll);
+
+  // 切换标签
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('view-monitor').classList.toggle('hidden', t.dataset.tab !== 'monitor');
+      document.getElementById('view-settings').classList.toggle('hidden', t.dataset.tab !== 'settings');
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    sparkline(document.getElementById('sparkDown'), down, '#60A5FA', peakAll);
+    sparkline(document.getElementById('sparkUp'), up, '#A78BFA', peakAll);
+  });
+</script>
+</body>
+</html>

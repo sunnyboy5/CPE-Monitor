@@ -1,0 +1,16 @@
+# ---- 构建产物 ----
+.build/
+dist/
+
+# ---- macOS ----
+.DS_Store
+._*
+
+# ---- 编辑器 / 工具 ----
+.vscode/
+.idea/
+.workbuddy/
+*.xcuserstate
+
+# ---- 日志 ----
+*.log
