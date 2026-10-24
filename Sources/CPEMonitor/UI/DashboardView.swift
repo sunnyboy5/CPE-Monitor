@@ -26,19 +26,20 @@ struct DashboardView: View {
                     VStack(spacing: Theme.cardSpacing) {
                         if hasNotice { notices }
 
-                        NetworkInfoPanel(info: engine.snapshot.info,
-                                         band: engine.snapshot.band)
-
-                        SignalPanel(band: engine.snapshot.band)
-
-                        SpeedPanel(download: engine.snapshot.downloadBytesPerSecond,
-                                   upload: engine.snapshot.uploadBytesPerSecond,
-                                   downTrend: engine.downTrend,
-                                   upTrend: engine.upTrend,
-                                   interfaceName: engine.snapshot.interfaceName,
-                                   warmingUp: engine.speedWarmingUp)
-
-                        TrafficPanel(engine: engine)
+                        if settings.usesLocalReadOnlyAPI {
+                            LocalSubscriptionPanel(info: engine.snapshot.info)
+                        } else {
+                            NetworkInfoPanel(info: engine.snapshot.info,
+                                             band: engine.snapshot.band)
+                            SignalPanel(band: engine.snapshot.band)
+                            SpeedPanel(download: engine.snapshot.downloadBytesPerSecond,
+                                       upload: engine.snapshot.uploadBytesPerSecond,
+                                       downTrend: engine.downTrend,
+                                       upTrend: engine.upTrend,
+                                       interfaceName: engine.snapshot.interfaceName,
+                                       warmingUp: engine.speedWarmingUp)
+                            TrafficPanel(engine: engine)
+                        }
 
                         HardwarePanel(info: engine.snapshot.info)
 
@@ -105,11 +106,11 @@ struct DashboardView: View {
     // MARK: - 通知条
 
     private var hasNotice: Bool {
-        settings.mockMode || !engine.link.isOnline || keychainBlocked
+        settings.mockMode || !engine.link.isOnline || keychainBlocked || settings.usesLocalReadOnlyAPI
     }
 
     private var keychainBlocked: Bool {
-        settings.rememberPassword && settings.password.isEmpty
+        settings.requiresPassword && settings.rememberPassword && settings.password.isEmpty
     }
 
     @ViewBuilder
@@ -119,6 +120,12 @@ struct DashboardView: View {
                 NoticeBar(kind: .info,
                           title: "演示模式",
                           detail: "当前展示的是模拟数据，没有连接真机。可在设置 → 高级里关闭。")
+            }
+
+            if settings.usesLocalReadOnlyAPI && !settings.mockMode {
+                NoticeBar(kind: .info,
+                          title: "9527 免登录监控",
+                          detail: "此端口提供系统信息和温度；信号、实时速率及流量没有可读取的数据接口。")
             }
 
             switch engine.link {

@@ -73,6 +73,7 @@ final class AppSettings: ObservableObject {
     private enum Key {
         static let host = "conn.host"
         static let port = "conn.port"
+        static let backend = "conn.backend"
         static let useHTTPS = "conn.useHTTPS"
         static let refreshInterval = "conn.refreshInterval"
         static let menuBarMode = "ui.menuBarMode"
@@ -99,9 +100,15 @@ final class AppSettings: ObservableObject {
         didSet { store(host, Key.host) }
     }
 
-    /// 端口。UDX710 通用版默认 6677，SZ50 版默认 80
+    /// 端口。3000 是 project-cpe 固件的默认端口；9527 是本机免登录只读管理页；
+    /// 6677 兼容旧版 UDX710-TOOLS。具体走哪套协议看 `backend`。
     @Published var port: Int {
         didSet { store(port, Key.port) }
+    }
+
+    /// 设备端跑的是哪套固件协议。ip:port 之外还要认协议 —— 三者接口完全不兼容。
+    @Published var backend: DeviceBackend {
+        didSet { store(backend.rawValue, Key.backend) }
     }
 
     @Published var useHTTPS: Bool {
@@ -190,8 +197,14 @@ final class AppSettings: ObservableObject {
 
         if persist {
             defaults.register(defaults: [
-                Key.host: "192.168.1.1",
-                Key.port: 6677,
+                Key.host: "192.168.66.1",
+                // project-cpe 固件的后端默认监听 3000（`--port` 的默认值）。
+                // 老用户已保存的 9527 / 6677 不会被这条默认值覆盖。
+                //
+                // ⚠️ 这里**不能**给 Key.backend 注册默认值：register 写的是
+                // registration domain，读出来和「真的存过」无法区分，
+                // 迁移逻辑会以为用户已经选过协议，从而永远不触发。
+                Key.port: 3000,
                 Key.useHTTPS: false,
                 Key.refreshInterval: 2.0,
                 Key.menuBarMode: MenuBarMode.speed.rawValue,
@@ -215,10 +228,39 @@ final class AppSettings: ObservableObject {
             }
         }
 
-        // didSet 在 init 阶段不会触发，所以这里直接读、直接赋
-        host = overrideHost ?? (persist ? (defaults.string(forKey: Key.host) ?? "192.168.1.1")
-                                        : "192.168.1.1")
-        port = overridePort ?? (persist ? defaults.integer(forKey: Key.port) : 6677)
+        // didSet 在 init 阶段不会触发，所以这里直接读、直接赋。
+        //
+        // 协议和端口是两件事：固件协议决定调哪套接口，端口只是它的监听位置，
+        // 允许把 project-cpe 跑在非 3000 端口上。所以协议单独存一个键。
+        let storedBackendRaw = persist ? defaults.string(forKey: Key.backend) : nil
+        let knownBackend = storedBackendRaw.flatMap(DeviceBackend.init(rawValue:))
+
+        let resolvedPort: Int
+        let resolvedBackend: DeviceBackend
+
+        if let overridePort {
+            // 命令行临时指定端口（--port）：按端口猜协议，一次性覆盖，不落盘
+            resolvedPort = overridePort
+            resolvedBackend = knownBackend ?? DeviceBackend.infer(fromPort: overridePort)
+        } else if let knownBackend {
+            resolvedPort = persist ? defaults.integer(forKey: Key.port) : knownBackend.defaultPort
+            resolvedBackend = knownBackend
+        } else {
+            // 老配置里没有 conn.backend：这台设备接下来要刷 project-cpe 固件，
+            // 一次性切过去（默认端口 3000）。用户随时能在设置里改回来。
+            resolvedPort = DeviceBackend.projectCPE.defaultPort
+            resolvedBackend = .projectCPE
+            if persist {
+                defaults.set(resolvedPort, forKey: Key.port)
+                defaults.set(resolvedBackend.rawValue, forKey: Key.backend)
+            }
+        }
+
+        host = overrideHost ?? (persist ? (defaults.string(forKey: Key.host) ?? "192.168.66.1")
+                                        : "192.168.66.1")
+        port = resolvedPort
+        backend = resolvedBackend
+
         useHTTPS = persist ? defaults.bool(forKey: Key.useHTTPS) : false
         refreshInterval = persist ? defaults.double(forKey: Key.refreshInterval) : 2.0
         menuBarMode = persist
@@ -280,6 +322,17 @@ final class AppSettings: ObservableObject {
     }
 
     /// 组装 base URL
+    var usesLocalReadOnlyAPI: Bool { backend == .localReadOnly }
+    var usesProjectCPE: Bool { backend == .projectCPE }
+    /// 只有旧版 6677 需要后台密码换令牌
+    var requiresPassword: Bool { backend.needsPassword }
+
+    /// 切协议时顺手把端口带过去（用户仍可手动改）。已经在目标端口上就不动。
+    func applyBackend(_ next: DeviceBackend) {
+        backend = next
+        if port != next.defaultPort { port = next.defaultPort }
+    }
+
     var baseURL: URL? {
         var text = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }

@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// 9527 只读服务提供的签约信息。数值是套餐能力，并非实时网速。
+struct LocalSubscriptionPanel: View {
+    let info: DeviceInfo?
+
+    var body: some View {
+        CardBox(title: "网络签约") {
+            HStack(spacing: 8) {
+                Text("QCI \(Fmt.intOrDash(info?.qci))")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 4)
+                Pill(text: "\(Fmt.signedMbps(info?.downlinkRate))Mbps",
+                     color: Theme.accent, systemImage: "arrow.down")
+                Pill(text: "\(Fmt.signedMbps(info?.uplinkRate))Mbps",
+                     color: Theme.purple, systemImage: "arrow.up")
+            }
+        }
+    }
+}
+
 // MARK: - 1. 运营商 / 网络信息
 
 /// 参考图的第二张卡：运营商 + 制式标签 + 信号格，下面嵌一条「签约状态」浅底行。

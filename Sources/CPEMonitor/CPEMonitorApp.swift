@@ -217,6 +217,7 @@ struct MenuBarLabel: View {
         case .iconOnly:
             return nil
         case .speed:
+            if engine.usesLocalReadOnlyAPI { return "↓-- ↑--" }
             let down = Fmt.rateCompact(snap.downloadBytesPerSecond)
             let up = Fmt.rateCompact(snap.uploadBytesPerSecond)
             return "↓\(down) ↑\(up)"

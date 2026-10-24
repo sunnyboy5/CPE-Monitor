@@ -1,7 +1,13 @@
 # CPE Monitor
 
-macOS 菜单栏常驻的 5G CPE / 插卡路由器实时监控面板。
-数据来自设备端 [UDX710-TOOLS](https://github.com/sunnyboy5/UDX710-TOOLS) 的 HTTP 接口，
+macOS 菜单栏常驻的 5G CPE / 插卡路由器实时监控面板。支持三种设备后台，设置里一键切换：
+
+| 固件 | 默认端口 | 鉴权 | 说明 |
+|---|---|---|---|
+| **project-cpe**（默认） | 3000 | 无 | [1orz/project-cpe](https://github.com/1orz/project-cpe)，Rust + Axum + ofono，功能最全 |
+| UDX710-TOOLS | 6677 | Bearer token | 旧版工具后台 |
+| 本地只读页 | 9527 | 无 | 只有系统信息 + 温度 |
+
 开机即驻留菜单栏，点开一屏看完网络、信号、速率、流量与硬件状态。
 
 纯 SwiftUI + SwiftPM，**不需要完整 Xcode**，只用 CommandLineTools 就能构建和打包。
@@ -16,14 +22,17 @@ macOS 菜单栏常驻的 5G CPE / 插卡路由器实时监控面板。
 
 ## 功能
 
-| 模块 | 内容 | 接口 |
+| 模块 | 内容 | project-cpe 接口 |
 |---|---|---|
-| 网络信息 | 运营商、网络模式（5G SA）、工作频段（n78）、QCI 等级、签约上下行 | `GET /api/info` |
-| 无线信号 | RSRP / SINR / RSRQ，每项自动评级（极佳 / 良好 / 一般 / 较差）+ 进度条 | `GET /api/current_band` |
-| 实时网速 | 实时下载 / 上传速率 + 折线波形（48 采样点滚动） | `POST /api/netif/stats` |
-| 流量统计 | 套餐类型、本月已用（带占用进度条）、当日已用、累计 | `/api/get/set` + `vnstat` |
-| 硬件状态 | CPU 占用、内存占用、芯片温度、运行时长 | `GET /api/info` |
-| 设备维护 | 清理设备内核页缓存、重置流量统计，可设定时自动清理 | `POST /api/clear_cache` + `POST /api/set/total` |
+| 网络信息 | 运营商、网络模式（5G SA）、工作频段（N41）、QCI 等级、签约上下行 | `GET /api/network` + `/api/cells` + `/api/qos` |
+| 无线信号 | RSRP / SINR / RSRQ，每项自动评级（极佳 / 良好 / 一般 / 较差）+ 进度条 | `GET /api/cells` |
+| 实时网速 | 实时下载 / 上传速率 + 折线波形（48 采样点滚动） | `GET /api/stats` |
+| 流量统计 | 当日已用（本机累加）、设备累计收发 | `GET /api/stats` |
+| 硬件状态 | CPU 占用、内存占用、芯片温度、运行时长 | `GET /api/stats` |
+| 设备维护 | 重启设备 | `POST /api/system/reboot` |
+
+旧版 UDX710-TOOLS（6677）走另一套接口：`/api/info`、`/api/current_band`、`/api/netif/*`、
+`/api/get/Total`、`/api/shell`，对应「清缓存 / 重置 vnstat 统计」两个维护动作。
 
 菜单栏标题可选：仅图标 / 实时速率 / 信号强度 / 芯片温度 / CPU / 内存。
 
@@ -36,7 +45,37 @@ App 是 ad-hoc 签名（未公证），首次打开会被 Gatekeeper 拦一次�
 - 系统设置 → 隐私与安全性 → 「仍要打开」
 - 或终端执行 `xattr -dr com.apple.quarantine "/Applications/CPE Monitor.app"`
 
-首次启动会自动开一个窗口并停在设置页，填好设备地址和后台密码即可。
+首次启动会自动开一个窗口并停在设置页。当前设备填 `192.168.66.1`、端口 `3000`，选固件 `project-cpe`，无需密码。
+
+## project-cpe 固件（默认）
+
+对接 [1orz/project-cpe](https://github.com/1orz/project-cpe)。这套固件和旧的两套接口**完全不兼容**，几个必须知道的点：
+
+1. **端口 3000**，`--port` 的默认值；协议和端口分开存（`conn.backend` / `conn.port`），
+   所以 project-cpe 跑在别的端口上也能用。
+2. **没有任何鉴权**：没有登录接口，也不认 `Bearer`，密码栏在这套协议下不显示。
+3. **响应统一包一层** `{status, message, data}`，而且**出错时 HTTP 仍是 200**，
+   只有 `status == "error"`。所以每个请求都得先判 status 再取 data。
+4. **信号值是 ×100 的字符串**：`rsrp: "-7615"` 实际是 −76.15 dBm。频段是
+   `n41` / `B3` 这种带前缀的小写写法。
+5. **QoS 单位是 kbps**（`AT+CGEQOSRDP` 的 GBR/MBR/AMBR），和旧固件同量纲。
+6. **`/api/stats` 在服务端同步采样 1 秒**才算得出速率，所以这个接口本身就是慢的：
+   刷新间隔 2s + 服务端 1s ≈ 3s 一次更新。这也是唯一每轮都请求的接口，
+   运营商 / 小区 / QoS / IMEI 走 4 轮一次的慢循环（它们都要串行发 AT）。
+7. **没有 vnstat、没有账单周期**：只有各网卡开机以来的累计收发字节。
+   所以「当月已用」不显示，「当日流量」由本机累加器按 delta 算，
+   「设备总流量」用网卡累计值。
+8. **换设备后流量累加器会自动归零**（`TrafficAccumulator` 记了 source key），
+   否则新设备的累计基数减旧基数会凭空冒出几十 GB 的假「今日用量」。
+
+> `/api/get/sysinfo` 这类旧路径在这套固件上不存在；反过来它也没有 `drop_caches`，
+> 所以维护面板只保留「重启设备」。
+
+## 9527 免登录模式
+
+端口设为 `9527` 时，小窗口只请求 `GET /api/sysinfo` 和 `GET /api/sys/temp`，显示 QCI、签约上下行速率、内存、温度和运行时长。设置页隐藏登录与设备维护入口。该端口的管理页通过 `8080` 获取网络信号，9527 自身没有相应读接口；小窗口在此模式下将信号、实时速率和流量显示为未提供，不会把签约速率当成实时网速，也不会向设备发送写请求。
+
+下面的鉴权、网卡、流量和设备维护说明适用于旧版 6677 接口。
 
 ## 自己构建
 
@@ -53,7 +92,7 @@ App 是 ad-hoc 签名（未公证），首次打开会被 Gatekeeper 拦一次�
 
 ## 鉴权
 
-UDX710-TOOLS 的 `is_auth_whitelist` 放行了两个核心接口：
+**project-cpe 和 9527 都没有任何鉴权**，本节只适用于旧版 6677。UDX710-TOOLS 的 `is_auth_whitelist` 放行了两个核心接口：
 
 - `GET /api/info` —— 免登录
 - `GET /api/current_band` —— 免登录
@@ -85,13 +124,14 @@ App 在设置里保存一次后台密码（存钥匙串），自动登录，并�
 
 | 项 | 说明 |
 |---|---|
-| 地址 / 端口 | 设备 IP。UDX710 通用版默认 `6677`，SZ50 版默认 `80` |
+| 固件 | `project-cpe（3000）` / `UDX710-TOOLS（6677）` / `本地只读页（9527）`，切换时端口自动跟上 |
+| 地址 / 端口 | 默认 `192.168.66.1:3000`；端口可手动改（协议和端口是两件事） |
 | 刷新间隔 | 1–10 秒，默认 2 秒（对应快循环；流量明细走慢循环） |
 | 菜单栏显示 | 仅图标 / 实时速率 / 信号强度 / 芯片温度 / CPU / 内存 |
-| 后台密码 | 存钥匙串，用于换令牌拿实时速率 |
+| 后台密码 | 仅 UDX710-TOOLS 需要，存钥匙串用于换令牌 |
 | 网卡 | 留空自动挑选，也可手动指定 |
 | 套餐口径 | 设备未上报账单周期时，本月 / 当日取自 vnstat 明细 |
-| 设备维护 | 清缓存、重置统计、定时自动清理 |
+| 设备维护 | project-cpe：重启设备；UDX710-TOOLS：清缓存、重置统计、定时自动清理 |
 | 开机自启 | 登录时自动启动，直接改系统「登录项」 |
 
 ## 真机实测记录
@@ -150,24 +190,36 @@ open "dist/CPE Monitor.app" --args --window --live \
 
 ### 协议仿真服务
 
-没有设备在手时，用内置的仿真服务配合自检模式验证整条链路（字段名严格照抄 `handlers.c`）：
+没有设备在手时，用内置的仿真服务配合自检模式验证整条链路。
+两个仿真服务分别对应两套协议，字段名严格照抄原始后端代码：
 
 ```bash
-# 1. 起仿真服务
+# ===== project-cpe（新固件，端口 3000 那套）=====
+python3 tools/mock_project_cpe.py 13000
+
+# 接口自检：逐项验证包装层、×100 信号值、QoS 单位、网卡挑选与模型映射
+dist/CPE\ Monitor.app/Contents/MacOS/CPEMonitor \
+  --selftest --backend projectCPE --host 127.0.0.1 --port 13000
+
+# 轮询引擎巡检：真实引擎跑 N 秒。注意 /api/stats 服务端固定 1s，节奏会比旧固件慢
+dist/CPE\ Monitor.app/Contents/MacOS/CPEMonitor \
+  --watch --host 127.0.0.1 --port 13000 --seconds 16
+
+# ===== UDX710-TOOLS（旧固件，6677）=====
 python3 tools/mock_server.py 16677
 
-# 2. 接口自检：逐项验证解码、鉴权、网卡挑选、速率、流量明细
 dist/CPE\ Monitor.app/Contents/MacOS/CPEMonitor \
   --selftest --host 127.0.0.1 --port 16677 --password admin
 
-# 3. 轮询引擎巡检：真实引擎跑 N 秒，观察速率曲线与状态
 dist/CPE\ Monitor.app/Contents/MacOS/CPEMonitor \
   --watch --host 127.0.0.1 --port 16677 --password admin --seconds 16
 
-# 4. 维护接口联调：清缓存 / 重置统计，跑完自退
 dist/CPE\ Monitor.app/Contents/MacOS/CPEMonitor \
   --probe-maintenance --host 127.0.0.1 --port 16677 --password admin
 ```
+
+协议按端口自动判：`3000 → project-cpe`、`9527 → 本地只读`、`6677/16677 → UDX710-TOOLS`，
+其余端口默认按 project-cpe 处理；也可以用 `--backend` 显式指定。
 
 连真机时把 `--host` 换成设备 IP。`--watch` 用 `persist: false` 构造配置，
 不会覆盖已保存的连接设置和钥匙串。加 `--mock` 可脱离设备、用演示数据跑一遍引擎。
@@ -287,12 +339,14 @@ cpe-monitor/
 ├── preview/                      # 界面截图（真机实拍 + 离屏渲染 + 静态预览）
 ├── tools/make_icon.swift         # 画 AppIcon.icns（渐变圆角方 + 天线符号）
 ├── tools/使用说明.txt            # 随 DMG 发给最终用户的说明
-├── tools/mock_server.py          # UDX710-TOOLS 协议仿真服务
+├── tools/mock_server.py          # UDX710-TOOLS(6677) 协议仿真服务
+├── tools/mock_project_cpe.py     # project-cpe(3000) 协议仿真服务
 └── Sources/CPEMonitor/
     ├── CPEMonitorApp.swift       # @main + MenuBarExtra + 独立窗口模式（AppDelegate）
     ├── Core/
-    │   ├── Models.swift          # 数据模型，字段对齐 handlers.c
-    │   ├── APIClient.swift       # HTTP 客户端 + 自动重登
+    │   ├── Models.swift          # UI 统一数据模型（MonitorSnapshot）
+    │   ├── ProjectCPE.swift      # project-cpe 协议：DTO、客户端、字段映射
+    │   ├── APIClient.swift       # 旧版 6677 的 HTTP 客户端 + 自动重登
     │   ├── MonitorEngine.swift   # 快慢双循环轮询引擎
     │   ├── Settings.swift        # UserDefaults 配置（支持不落盘模式）
     │   ├── LaunchAtLogin.swift   # 开机自启（SMAppService）+ --login-item 诊断

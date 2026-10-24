@@ -39,8 +39,10 @@ enum MockData {
         d.networkType = "5G NR"
         d.networkBand = "N78"
         d.qci = 6
-        d.downlinkRate = 1000
-        d.uplinkRate = 200
+        // 单位是 kbps（真机 /api/qos 的 dl_speed 也是 kbps），
+        // 写成 1000 会被 Fmt.signedMbps 当成 1 Mbps。
+        d.downlinkRate = 1_000_000
+        d.uplinkRate = 200_000
         return d
     }
 

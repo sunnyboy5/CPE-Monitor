@@ -44,8 +44,17 @@ enum SelfTest {
         let box = Box()
         let semaphore = DispatchSemaphore(value: 0)
 
+        // 走哪套协议：默认按端口推断，也可以用 --backend 显式指定
+        let backend = value(for: "--backend").flatMap(DeviceBackend.init(rawValue:))
+            ?? DeviceBackend.infer(fromPort: port)
+        print("目标协议: \(backend.label)\n")
+
         Task.detached {
-            box.failures = await execute(base: base, password: password)
+            if backend == .projectCPE {
+                box.failures = await executeProjectCPE(base: base)
+            } else {
+                box.failures = await execute(base: base, password: password)
+            }
             semaphore.signal()
         }
         semaphore.wait()
@@ -76,6 +85,9 @@ enum SelfTest {
 
         let engine = MonitorEngine(settings: settings)
         engine.start()
+
+        // 9527 只读页没有速率/流量接口，巡检时的判定和列显示都得放宽
+        let readOnly = DeviceBackend.infer(fromPort: port) == .localReadOnly
 
         print("轮询引擎巡检：\(host):\(port)，持续 \(seconds) 秒\n")
         print("  时刻      链路        下载            上传            采样  本月          当日")
@@ -112,11 +124,11 @@ enum SelfTest {
             }
             print("  \(clock.string(from: Date()))  "
                   + pad(link, 10)
-                  + pad(Fmt.rate(down), 16)
-                  + pad(Fmt.rate(up), 16)
+                  + pad(readOnly ? "--" : Fmt.rate(down), 16)
+                  + pad(readOnly ? "--" : Fmt.rate(up), 16)
                   + pad("\(engine.downTrend.count)", 6)
-                  + pad(Fmt.bytes(snap.monthlyBytes), 14)
-                  + Fmt.bytes(snap.dailyBytes))
+                  + pad(readOnly ? "--" : Fmt.bytes(snap.monthlyBytes), 14)
+                  + (readOnly ? "--" : Fmt.bytes(snap.dailyBytes)))
 
             if let err = engine.lastError {
                 print("            最近错误：\(err)")
@@ -124,15 +136,29 @@ enum SelfTest {
         }
 
         print("")
-        let passed = engine.link == .online && sawSpeed && engine.downTrend.count >= 3
+        let passed: Bool
+        if readOnly {
+            // 9527 只提供系统信息与温度；没有实时速率接口。
+            passed = engine.link == .online
+                && engine.snapshot.info?.totalRam != nil
+                && engine.snapshot.info?.thermalTemp != nil
+        } else {
+            passed = engine.link == .online && sawSpeed && engine.downTrend.count >= 3
+        }
         if passed {
             print("轮询引擎巡检通过 ✅")
         } else {
-            print("轮询引擎巡检未通过 ❌ 链路=\(engine.link) 收到速率=\(sawSpeed) 采样数=\(engine.downTrend.count)")
+            print("轮询引擎巡检未通过 ❌ 链路=\(engine.link) 内存=\(String(describing: engine.snapshot.info?.totalRam)) 温度=\(String(describing: engine.snapshot.info?.thermalTemp))")
         }
-        print("  最终快照：运营商=\(Fmt.orDash(engine.snapshot.info?.carrier)) "
-              + "频段=\(Fmt.orDash(engine.snapshot.band?.band)) "
-              + "网卡=\(engine.snapshot.interfaceName ?? "nil")")
+        if readOnly {
+            print("  最终快照：内存=\(Fmt.mb(engine.snapshot.info?.totalRam)) "
+                  + "温度=\(Fmt.temp(engine.snapshot.info?.thermalTemp)) "
+                  + "QCI=\(Fmt.intOrDash(engine.snapshot.info?.qci))")
+        } else {
+            print("  最终快照：运营商=\(Fmt.orDash(engine.snapshot.info?.carrier)) "
+                  + "频段=\(Fmt.orDash(engine.snapshot.band?.band)) "
+                  + "网卡=\(engine.snapshot.interfaceName ?? "nil")")
+        }
         exit(passed ? 0 : 1)
     }
 
@@ -303,6 +329,172 @@ enum SelfTest {
         }
 
         // ============ 流量累加器单元测试（不依赖设备） ============
+        failures += runAccumulatorUnitTests()
+
+        if failures == 0 {
+            print("\n全部通过 ✅")
+        } else {
+            print("\n❌ 共 \(failures) 项失败")
+        }
+        return failures
+    }
+
+    // MARK: - project-cpe 协议检查
+
+    /// 逐项验证 project-cpe 固件的整条链路：探活、设备、SIM、网络、QoS、小区、系统统计，
+    /// 最后再验证一遍映射到 UI 模型的结果对不对（尤其是信号值 ÷100 和接口挑选）。
+    private static func executeProjectCPE(base: URL) async -> Int {
+        var failures = 0
+        let client = ProjectCPEClient(baseURL: base)
+
+        func check(_ title: String, _ passed: Bool, _ detail: String) {
+            print(passed ? "  ✅ \(title)" : "  ❌ \(title)")
+            print("     \(detail)")
+            if !passed { failures += 1 }
+        }
+
+        print("目标: \(base.absoluteString)\n")
+
+        // 1. 探活
+        print("[1] GET /api/health（无鉴权）")
+        do {
+            let version = try await client.health()
+            check("服务存活", true, "version=\(version)")
+        } catch {
+            check("服务存活", false, error.localizedDescription)
+            print("\n探活失败，后续检查跳过")
+            return failures + 1
+        }
+
+        // 2. 设备
+        print("\n[2] GET /api/device")
+        var device: CPEDevice?
+        do {
+            let d = try await client.device()
+            device = d
+            check("IMEI / 型号", d.imei != nil && d.model != nil,
+                  "imei=\(d.imei ?? "nil")  model=\(d.model ?? "nil")  "
+                  + "online=\(d.online.map(String.init) ?? "nil")")
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 3. SIM
+        print("\n[3] GET /api/sim")
+        do {
+            let s = try await client.sim()
+            check("ICCID / IMSI", s.iccid != nil && s.imsi != nil,
+                  "iccid=\(Fmt.mask(s.iccid))  imsi=\(Fmt.mask(s.imsi))  present=\(s.present.map(String.init) ?? "nil")")
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 4. 网络注册
+        print("\n[4] GET /api/network")
+        do {
+            let n = try await client.network()
+            check("运营商 / 注册状态", n.operatorName != nil && n.registrationStatus != nil,
+                  "operator=\(n.operatorName ?? "nil")  status=\(n.registrationStatus ?? "nil")  "
+                  + "tech=\(n.technologyPreference ?? "nil")")
+            check("信号强度落在 0–100",
+                  (n.signalPercent ?? -1) >= 0 && (n.signalPercent ?? 101) <= 100,
+                  "signal=\(n.signalStrength.map { String(format: "%.0f", $0) } ?? "nil") "
+                  + "→ \(n.signalPercent.map { String(format: "%.0f%%", $0) } ?? "nil")")
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 5. QoS
+        print("\n[5] GET /api/qos（AT+CGEQOSRDP，单位 kbps）")
+        do {
+            let q = try await client.qos()
+            check("QCI / 签约速率", q.qci != nil && (q.dlSpeed ?? 0) > 0,
+                  "qci=\(q.qci.map(String.init) ?? "nil")  "
+                  + "dl=\(q.dlSpeed ?? 0) kbps（\(Fmt.signedMbps(q.dlSpeed)) Mbps）  "
+                  + "ul=\(q.ulSpeed ?? 0) kbps（\(Fmt.signedMbps(q.ulSpeed)) Mbps）")
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 6. 小区（信号值 ×100 的字符串，重点验证 ÷100）
+        print("\n[6] GET /api/cells")
+        var cells: CPECells?
+        do {
+            let c = try await client.cells()
+            cells = c
+            check("服务小区解码", c.serving != nil,
+                  "tech=\(c.servingCell?.tech ?? "nil")  cells=\(c.cells?.count ?? 0) 个")
+
+            let raw = c.serving?.rsrp?.raw ?? "nil"
+            let band = c.bandData
+            check("RSRP ÷100 后落在合理区间",
+                  (band.rsrp ?? 0) < 0 && (band.rsrp ?? -200) > -160,
+                  "原始=\(raw) → \(band.rsrp.map { String(format: "%.2f dBm", $0) } ?? "nil")")
+            check("频段 / PCI / ARFCN",
+                  band.band != nil && band.pci != nil && band.arfcn != nil,
+                  "band=\(band.band ?? "nil")  pci=\(band.pci.map(String.init) ?? "nil")  "
+                  + "arfcn=\(band.arfcn.map(String.init) ?? "nil")")
+            check("评级映射可用", Quality.rsrp(band.rsrp) != .unknown,
+                  "RSRP→\(Quality.rsrp(band.rsrp).rawValue)  "
+                  + "SINR→\(Quality.sinr(band.sinr).rawValue)  "
+                  + "RSRQ→\(Quality.rsrq(band.rsrq).rawValue)")
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 7. 系统统计
+        print("\n[7] GET /api/stats（服务端同步采样 1 秒）")
+        var stats: CPEStats?
+        do {
+            let started = Date()
+            let s = try await client.stats()
+            stats = s
+            let cost = Date().timeIntervalSince(started)
+            check("耗时在合理范围", cost > 0.5 && cost < 20,
+                  String(format: "%.2f 秒（服务端固定采样 1s）", cost))
+
+            check("内存 / CPU / 运行时长",
+                  s.memory?.totalBytes != nil && s.cpuLoad?.loadPercent != nil
+                  && s.uptime?.uptimeSeconds != nil,
+                  "内存 \(Fmt.bytes(s.memory?.usedBytes)) / \(Fmt.bytes(s.memory?.totalBytes))"
+                  + "（\(String(format: "%.1f", s.memory?.usedPercent ?? 0))%）  "
+                  + "CPU \(String(format: "%.1f", s.cpuLoad?.loadPercent ?? 0))%  "
+                  + "运行 \(s.uptime?.uptimeFormatted ?? "--")")
+
+            check("温度传感器", (s.temperature?.count ?? 0) > 0,
+                  "\(s.temperature?.count ?? 0) 个温区，主温区 "
+                  + (s.mainTemperature.map { String(format: "%.1f °C", $0) } ?? "nil"))
+
+            let names = s.networkSpeed?.interfaces?.compactMap(\.interface) ?? []
+            check("网卡列表", !names.isEmpty, names.joined(separator: ", "))
+        } catch {
+            check("请求成功", false, error.localizedDescription)
+        }
+
+        // 8. 映射到 UI 模型
+        print("\n[8] 映射到界面模型")
+        if let stats {
+            let mapped = stats.netifStats(interface: nil)
+            check("实时速率映射", mapped.stats.rx != nil && mapped.stats.tx != nil,
+                  "下行 \(Fmt.rate(mapped.stats.rx?.bytesPerSecond ?? 0)) / "
+                  + "上行 \(Fmt.rate(mapped.stats.tx?.bytesPerSecond ?? 0))  接口=\(mapped.name ?? "nil")")
+
+            check("网卡挑选不是回环", (mapped.name ?? "lo") != "lo", "选中 \(mapped.name ?? "nil")")
+
+            let total = stats.trafficTotal(interface: mapped.name)
+            check("累计流量映射", total != nil,
+                  "rx=\(total?.rx ?? "nil") tx=\(total?.tx ?? "nil") total=\(total?.total ?? "nil")")
+
+            let info = stats.hardwareInfo(into: DeviceInfo())
+            check("硬件字段齐全（内存走 MiB 口径）",
+                  info.totalRam != nil && info.cpuUsage != nil && info.thermalTemp != nil,
+                  "RAM=\(Fmt.mb(info.totalRam))  CPU=\(Fmt.percent(info.cpuUsage))  "
+                  + "温度=\(Fmt.temp(info.thermalTemp))  页缓存=\(Fmt.mb(info.cachedRam))")
+        }
+
+        _ = device
+        _ = cells
+
         failures += runAccumulatorUnitTests()
 
         if failures == 0 {

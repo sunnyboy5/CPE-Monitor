@@ -35,12 +35,16 @@ final class TrafficAccumulator {
         var monthKey: String
         var hasInitial: Bool
         var updatedAt: TimeInterval
+        /// 这组计数来自哪台设备/哪个网卡（host:port:protocol:iface）。
+        /// 换设备后累计基数完全不同，必须先归零再累加，否则会出现
+        /// 「今日用量突然多出几十 GB」——那是新基数减旧基数算出来的假增量。
+        var sourceKey: String?
 
         static let empty = State(
             lastRxBytes: 0, lastTxBytes: 0,
             dayTotalBytes: 0, monthTotalBytes: 0,
             dayKey: "", monthKey: "",
-            hasInitial: false, updatedAt: 0
+            hasInitial: false, updatedAt: 0, sourceKey: nil
         )
     }
 
@@ -77,12 +81,26 @@ final class TrafficAccumulator {
     }
 
     /// 喂一次新的累计字节数。会自动处理跨日 / 跨月归零。
-    func update(rxBytes: Int64?, txBytes: Int64?) {
+    ///
+    /// - Parameter source: 计数来源标识（设备 + 协议 + 网卡）。与上一次不同时
+    ///   会先归零再重新记起点 —— 换了设备以后两套计数器没有任何可比性。
+    func update(rxBytes: Int64?, txBytes: Int64?, source: String = "") {
         guard let rx = rxBytes, let tx = txBytes else { return }
 
         let now = clock()
         let nowDay = Self.dayKey(for: now)
         let nowMonth = Self.monthKey(for: now)
+
+        // 换了设备 / 固件协议 / 网卡：旧基数作废，按首次采样重新来
+        if state.hasInitial {
+            if let old = state.sourceKey {
+                if old != source { state = .empty }
+            } else {
+                // 老版本存的状态没有来源标识，判断不了是不是同一台设备 —— 归零重来。
+                // 宁可丢掉一次累计，也不要显示一个凭空的几十 GB。
+                state = .empty
+            }
+        }
 
         // 首次：只记录起点，不算"过去已用"。
         if !state.hasInitial {
@@ -93,10 +111,13 @@ final class TrafficAccumulator {
             state.dayTotalBytes = 0
             state.monthTotalBytes = 0
             state.hasInitial = true
+            state.sourceKey = source
             state.updatedAt = now.timeIntervalSince1970
             persist()
             return
         }
+
+        state.sourceKey = source
 
         // 设备重启 / 接口切换：rx/tx 可能倒退，按 0 算 delta。
         let rxDelta = max(Int64(0), rx - state.lastRxBytes)

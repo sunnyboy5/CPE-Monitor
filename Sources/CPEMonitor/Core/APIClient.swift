@@ -140,6 +140,15 @@ struct APIClient {
 
     // MARK: - 免登录接口
 
+    /// 9527 的独立管理服务。仅使用已确认的 GET 接口。
+    func localSysInfo() async throws -> LocalSysInfo {
+        try await perform("/api/sysinfo", authorized: false, as: LocalSysInfo.self)
+    }
+
+    func localTemperature() async throws -> LocalTemperature {
+        try await perform("/api/sys/temp", authorized: false, as: LocalTemperature.self)
+    }
+
     /// GET /api/info —— 免认证白名单，不带 Authorization
     func info() async throws -> DeviceInfo {
         try await performLenient("/api/info", authorized: false, as: DeviceInfo.self)

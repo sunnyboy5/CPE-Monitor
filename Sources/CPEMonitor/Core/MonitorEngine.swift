@@ -24,11 +24,25 @@ final class MonitorEngine: ObservableObject {
 
     private unowned let settings: AppSettings
 
+    var usesLocalReadOnlyAPI: Bool { settings.usesLocalReadOnlyAPI }
+
     private var token: String?
     private var activeInterface: String?
     private var loopTask: Task<Void, Never>?
     private var tick = 0
     private var monitorStartedAt: Date?
+
+    // MARK: project-cpe 的慢变数据缓存
+    //
+    // project-cpe 的 /api/network、/api/cells、/api/qos 都要串行发 AT 指令
+    // （ofono 单线程），而这几个值本身变化很慢。每轮都问既慢又折腾设备，
+    // 所以只每 `cpeSlowEvery` 轮刷新一次，中间用缓存顶着。
+    private var cpeDevice: CPEDevice?
+    private var cpeSim: CPESim?
+    private var cpeNetwork: CPENetwork?
+    private var cpeQos: CPEQos?
+    private var cpeCells: CPECells?
+    private let cpeSlowEvery = 4
 
     /// 实时流量累加器：用 netif/stats 的累计字节数算"今日 / 本月"，
     /// 不依赖设备端 vnstat DB（vnstatd 不在设备上跑时 DB 不会更新）。
@@ -74,6 +88,14 @@ final class MonitorEngine: ObservableObject {
         upHistory = []
         monitorStartedAt = nil
         speedWarmingUp = false
+        // 换协议/换设备后旧快照没有意义，清空让 UI 重新长出来，
+        // 免得把上一台设备的运营商、频段、流量串到新设备上
+        snapshot = .empty
+        cpeDevice = nil
+        cpeSim = nil
+        cpeNetwork = nil
+        cpeQos = nil
+        cpeCells = nil
         start()
     }
 
@@ -111,6 +133,16 @@ final class MonitorEngine: ObservableObject {
 
         if link == .idle { link = .connecting }
 
+        if settings.usesLocalReadOnlyAPI {
+            await refreshLocalReadOnly()
+            return
+        }
+
+        if settings.usesProjectCPE {
+            await refreshProjectCPE(forceSlow: forceSlow)
+            return
+        }
+
         do {
             let client = try await authedClient()
 
@@ -145,6 +177,150 @@ final class MonitorEngine: ObservableObject {
             lastError = error.localizedDescription
         }
     }
+
+    /// 9527 与 UDX710-TOOLS/6677 的路由不同，且不需要令牌。
+    /// 这里只访问设备管理页实际提供的两个只读 GET 接口。
+    private func refreshLocalReadOnly() async {
+        guard let base = settings.baseURL else { return }
+        let client = APIClient(baseURL: base, token: nil)
+        do {
+            let system = try await client.localSysInfo()
+            var info = system.deviceInfo
+            if let temperature = try? await client.localTemperature() {
+                info.thermalTemp = temperature.celsius
+            }
+            var next = MonitorSnapshot.empty
+            next.info = info
+            snapshot = next
+            link = .online
+            lastError = nil
+            lastUpdated = Date()
+        } catch {
+            link = .failed(error.localizedDescription)
+            lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - project-cpe 固件（Axum / 端口 3000 / 无鉴权）
+
+    /// 一轮 project-cpe 采样。
+    ///
+    /// 只有 `/api/stats` 是每轮必打：它一次给齐网速、内存、CPU、温度、运行时长，
+    /// 但服务端要**同步采样 1 秒**才能算出速率，所以它天然就是个慢接口
+    /// （刷新间隔 2s + 服务端 1s ≈ 3s 一次更新）。
+    /// 运营商 / 小区 / QoS / IMEI 这些走慢循环，靠 `cpeSlowEvery` 控制。
+    private func refreshProjectCPE(forceSlow: Bool) async {
+        guard let base = settings.baseURL else { return }
+        let client = ProjectCPEClient(baseURL: base)
+
+        do {
+            let stats = try await client.stats()
+
+            if forceSlow || tick % cpeSlowEvery == 0 {
+                // 这五个接口都要串行发 AT（ofono 单线程），并发发出去也只是排队，
+                // 但异步发起能让每个请求各自独立失败，一项挂掉不影响其它项。
+                async let networkTask = client.network()
+                async let qosTask = client.qos()
+                async let cellsTask = client.cells()
+                async let deviceTask = client.device()
+                async let simTask = client.sim()
+
+                // 拿不到就沿用上一次的值（小区信息本来就几十秒才变一次）
+                if let v = try? await networkTask { cpeNetwork = v }
+                if let v = try? await qosTask { cpeQos = v }
+                if let v = try? await cellsTask { cpeCells = v }
+                if let v = try? await deviceTask { cpeDevice = v }
+                if let v = try? await simTask { cpeSim = v }
+            }
+
+            // ---- 硬件 + 系统信息（/api/stats）----
+            var info = stats.hardwareInfo(into: DeviceInfo())
+
+            // ---- 设备 / SIM / 网络 / QoS（慢循环缓存）----
+            if let dev = cpeDevice {
+                info.imei = dev.imei
+                info.isActivated = (dev.online ?? false) ? 1 : 0
+                info.airplaneMode = (dev.online ?? true) ? false : true
+            }
+            if let sim = cpeSim {
+                info.iccid = sim.iccid
+                info.imsi = sim.imsi
+                info.simSlot = (sim.present ?? false) ? "1" : nil
+            }
+            if let net = cpeNetwork {
+                info.carrier = net.operatorName
+                info.selectNetworkMode = net.technologyPreference
+                // 信号格用 0–100 的百分比；RSRP 走 cells
+                info.signalStrength = net.signalPercent.map { String(Int($0.rounded())) }
+            }
+            if let qos = cpeQos {
+                info.qci = qos.qci
+                // AT+CGEQOSRDP 给的是 kbps，和旧固件同量纲，Fmt.signedMbps 直接可用
+                info.downlinkRate = qos.dlSpeed
+                info.uplinkRate = qos.ulSpeed
+            }
+
+            // ---- 小区 / 射频（慢循环缓存）----
+            var band: BandData?
+            if let cells = cpeCells {
+                let mapped = cells.bandData
+                if !mapped.isEmpty { band = mapped }
+                info.networkType = cells.displayTech ?? info.networkType
+                info.networkBand = mapped.band
+                info.networkMode = NetworkGeneration.is5G(mapped.networkType) ? "5G" : "4G"
+            }
+
+            // ---- 实时速率 + 累计流量 ----
+            let preferred = settings.interfaceOverride.isEmpty ? nil : settings.interfaceOverride
+            let mapped = stats.netifStats(interface: preferred)
+            let total = stats.trafficTotal(interface: mapped.name)
+
+            var next = snapshot
+            next.info = info
+            if let band { next.band = band }
+            next.trafficTotal = total
+            // project-cpe 没有账单周期概念，「当月已用」无源可依 —— 保持 nil，
+            // 面板会自动退到「设备总流量」那一列，而不是拿开机累计冒充月度用量。
+            next.monthlyBytes = nil
+
+            if mapped.stats.rx != nil || mapped.stats.tx != nil {
+                next.stats = mapped.stats
+                if let name = mapped.name { next.interfaceName = name }
+
+                // 当日流量只能靠本机累加器：设备端没有 vnstat，也没有按日接口
+                trafficAccumulator.update(rxBytes: mapped.stats.rx?.totalbytes,
+                                          txBytes: mapped.stats.tx?.totalbytes,
+                                          source: trafficSource(mapped.name))
+                if let today = trafficAccumulator.todayBytes {
+                    next.dailyBytes = today
+                    next.dailyLabel = nil
+                }
+            }
+
+            // 设置页的「设备上的网卡」提示
+            if let list = stats.networkSpeed?.interfaces {
+                availableInterfaces = list.compactMap { item in
+                    guard let name = item.interface, !name.isEmpty else { return nil }
+                    return NetifInfo(name: name, hwaddr: nil, inetAddr: nil, inet6Addr: nil,
+                                     mask: nil, isUp: true, monitoring: nil)
+                }
+            }
+
+            let down = next.downloadBytesPerSecond
+            let up = next.uploadBytesPerSecond
+
+            snapshot = next
+            pushHistory(down: down, up: up)
+            speedWarmingUp = false
+            link = .online
+            lastError = nil
+            lastUpdated = Date()
+        } catch {
+            link = .failed(error.localizedDescription)
+            lastError = error.localizedDescription
+        }
+    }
+
 
     // MARK: - 鉴权
 
@@ -182,7 +358,16 @@ final class MonitorEngine: ObservableObject {
 
     /// 清理设备端内核页缓存（POST /api/clear_cache）。
     /// 走 withReauth，token 过期会自动重登一次。
+    ///
+    /// project-cpe 固件没有这个接口（它把维护入口收进了 /api/system/reboot + OTA），
+    /// 所以这里直接拒绝，而不是发一个必然 404 的请求。
     func clearDeviceCache() async throws {
+        guard !settings.usesLocalReadOnlyAPI else {
+            throw APIError.disabled("9527 仅支持只读监控")
+        }
+        guard !settings.usesProjectCPE else {
+            throw APIError.disabled("project-cpe 固件没有清理缓存接口")
+        }
         try await withReauth { client in
             try await client.clearCache()
         }
@@ -192,6 +377,12 @@ final class MonitorEngine: ObservableObject {
 
     /// 重置设备端 vnstat 统计（POST /api/set/total 空参，**不可撤销**）。
     func resetDeviceTraffic() async throws {
+        guard !settings.usesLocalReadOnlyAPI else {
+            throw APIError.disabled("9527 仅支持只读监控")
+        }
+        guard !settings.usesProjectCPE else {
+            throw APIError.disabled("project-cpe 固件没有 vnstat 流量库")
+        }
         try await withReauth { client in
             try await client.resetTrafficStats()
         }
@@ -205,6 +396,23 @@ final class MonitorEngine: ObservableObject {
         await refreshNow()
     }
 
+    /// 重启设备（POST /api/system/reboot，project-cpe 专属）。
+    ///
+    /// 只有这个固件提供；发出去之后设备会立刻断开，接口多半不会正常返回，
+    /// 所以这里按「请求已送达」处理，不等响应体。
+    func rebootDevice() async throws {
+        guard settings.usesProjectCPE else {
+            throw APIError.disabled("只有 project-cpe 固件支持重启接口")
+        }
+        guard let base = settings.baseURL else { throw APIError.badURL }
+        try await ProjectCPEClient(baseURL: base).reboot()
+
+        // 主动置成失败态：设备正在重启，接下来几轮必然连不上，
+        // 让 UI 立刻显示「连接失败」比等超时更诚实。
+        link = .failed("设备正在重启…")
+        lastError = "已下发重启指令"
+    }
+
     // MARK: - 定时清理缓存
 
     /// 到点就清一次设备页缓存。
@@ -212,7 +420,8 @@ final class MonitorEngine: ObservableObject {
     /// 挂在慢循环上（每 slowEvery 轮检查一次，默认约 16 秒），不另起 Timer：
     /// 间隔最短也是 15 分钟，这个检查频率足够了。
     private func maybeAutoClearCache() async {
-        guard settings.autoClearEnabled, !settings.mockMode else { return }
+        // project-cpe 没有 drop_caches 接口，定时清理对它无意义
+        guard settings.autoClearEnabled, !settings.mockMode, !settings.usesProjectCPE else { return }
         let interval = settings.autoClearInterval.seconds
         if let last = lastAutoClearAt, Date().timeIntervalSince(last) < interval { return }
 
@@ -275,7 +484,9 @@ final class MonitorEngine: ObservableObject {
             //
             // ⚠️ 只更新「当日」。`monthlyBytes` 归 refreshTraffic 管（走 /api/get/Total），
             // 这里若也用累加器的 monthBytes 覆盖，会把设备真实当月值冲掉（差 3.5 GB）。
-            trafficAccumulator.update(rxBytes: stats.rx?.totalbytes, txBytes: stats.tx?.totalbytes)
+            trafficAccumulator.update(rxBytes: stats.rx?.totalbytes,
+                                      txBytes: stats.tx?.totalbytes,
+                                      source: trafficSource(name))
             next.dailyBytes = trafficAccumulator.todayBytes ?? next.dailyBytes
             // 累加器已经按 Mac 本地日历日划分，标签无需再打 "归属 X-X"
             if trafficAccumulator.todayBytes != nil {
@@ -313,6 +524,12 @@ final class MonitorEngine: ObservableObject {
         monitorStartedAt = Date()
         activeInterface = picked.name
         return picked.name
+    }
+
+    /// 告知累加器"这组计数属于谁"。换设备/换协议/换网卡时它会自动归零重算，
+    /// 否则新设备的累计基数减旧设备的基数会凭空冒出几十 GB 的「今日用量」。
+    private func trafficSource(_ interface: String?) -> String {
+        "\(settings.host):\(settings.port):\(settings.backend.rawValue):\(interface ?? "-")"
     }
 
     private func pushHistory(down: Double, up: Double) {

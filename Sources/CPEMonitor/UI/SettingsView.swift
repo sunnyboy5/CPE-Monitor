@@ -20,16 +20,21 @@ struct SettingsView: View {
     @State private var resetMessage: String?
     @State private var resetOK = true
 
+    @State private var confirmReboot = false
+    @State private var rebooting = false
+    @State private var rebootMessage: String?
+    @State private var rebootOK = true
+
     var body: some View {
         // 同 DashboardView：必须给确定高度，不能用 maxHeight（面板会塌掉）
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: Theme.cardSpacing) {
                 connectionPanel
-                authPanel
+                if settings.requiresPassword { authPanel }
                 displayPanel
                 startupPanel
-                trafficPanel
-                maintenancePanel
+                if settings.requiresPassword { trafficPanel }
+                if !settings.usesLocalReadOnlyAPI { maintenancePanel }
                 advancedPanel
             }
             .padding(.horizontal, Theme.pagePadding)
@@ -46,11 +51,27 @@ struct SettingsView: View {
         CardBox(title: "设备连接") {
             VStack(spacing: 8) {
                 HStack(spacing: 6) {
+                    Text("固件")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 46, alignment: .leading)
+                    Picker("", selection: backendBinding) {
+                        ForEach(DeviceBackend.allCases) { item in
+                            Text(item.label).tag(item)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 6) {
                     Text("地址")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 46, alignment: .leading)
-                    TextField("192.168.1.1", text: $settings.host)
+                    TextField("192.168.66.1", text: $settings.host)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.textPrimary)
@@ -64,7 +85,7 @@ struct SettingsView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 46, alignment: .leading)
-                    TextField("6677", value: $settings.port, format: .number.grouping(.never))
+                    TextField("3000", value: $settings.port, format: .number.grouping(.never))
                         .textFieldStyle(.plain)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Theme.textPrimary)
@@ -357,10 +378,113 @@ struct SettingsView: View {
 
     // MARK: - 设备维护
 
+    /// 两套固件的维护能力完全不同，按协议分叉：
+    /// - project-cpe：只有 `POST /api/system/reboot`（没有 drop_caches，也没有 vnstat）
+    /// - UDX710-TOOLS：清页缓存 + 重置 vnstat 统计
+    private var maintenancePanel: some View {
+        Group {
+            if settings.usesProjectCPE {
+                cpeMaintenancePanel
+            } else {
+                legacyMaintenancePanel
+            }
+        }
+    }
+
+    /// project-cpe 固件的维护卡片
+    private var cpeMaintenancePanel: some View {
+        CardBox(title: "设备维护", systemImage: "wrench.and.screwdriver",
+                iconColor: Theme.textSecondary) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("project-cpe 把清理缓存、OTA 这类动作收在自己的 Web 后台里，只对外暴露了重启接口。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                InfoRow(label: "页缓存占用", value: Fmt.mb(info?.cachedRam), mono: true)
+                InfoRow(label: "内存占用", value: Fmt.percent(info?.memoryUsagePercent), mono: true)
+
+                Rectangle()
+                    .fill(Theme.hairline)
+                    .frame(height: 0.5)
+
+                if confirmReboot {
+                    Text("设备会立刻断开连接并重启，期间监控中断，通常 30 秒到 2 分钟恢复。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.error)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        Button {
+                            reboot()
+                        } label: {
+                            HStack(spacing: 4) {
+                                if rebooting {
+                                    ProgressView().controlSize(.mini)
+                                }
+                                Text("确认重启")
+                                    .font(.system(size: 11))
+                            }
+                            .foregroundStyle(Theme.error)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(Theme.errorBg)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(rebooting)
+
+                        Button {
+                            confirmReboot = false
+                        } label: {
+                            Text("取消")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer(minLength: 0)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        Button {
+                            confirmReboot = true
+                            rebootMessage = nil
+                        } label: {
+                            Text("重启设备")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(settings.mockMode)
+
+                        if let rebootMessage {
+                            Text(rebootMessage)
+                                .font(.system(size: 11))
+                                .foregroundStyle(rebootOK ? Theme.ok : Theme.error)
+                                .lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+
+                if settings.mockMode {
+                    Text("演示模式下不会真的连设备，重启按钮不可用。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+        }
+    }
+
     /// 两个真正落在设备上的维护动作：
     /// 「清理设备缓存」= POST /api/clear_cache（内核 drop_caches）
     /// 「重置流量统计」= POST /api/set/total 传空参（删 vnstat 库并重建，不可撤销）
-    private var maintenancePanel: some View {
+    private var legacyMaintenancePanel: some View {
         CardBox(title: "设备维护", systemImage: "wrench.and.screwdriver",
                 iconColor: Theme.textSecondary) {
             VStack(alignment: .leading, spacing: 8) {
@@ -604,6 +728,19 @@ struct SettingsView: View {
         return "v" + (short ?? "dev")
     }
 
+    /// 切固件协议时把端口一起带过去。三者接口完全不兼容，
+    /// 只换端口不换协议会立刻 404 —— 所以这里成对处理。
+    private var backendBinding: Binding<DeviceBackend> {
+        Binding(
+            get: { settings.backend },
+            set: { next in
+                settings.applyBackend(next)
+                probeResult = nil
+                engine.restart()
+            }
+        )
+    }
+
     private var quotaBinding: Binding<Double> {
         Binding(
             get: { Double(settings.manualQuotaBytes) / 1_073_741_824 },
@@ -621,11 +758,23 @@ struct SettingsView: View {
         probeResult = nil
 
         Task {
-            let client = APIClient(baseURL: base, token: nil)
             do {
-                let info = try await client.info()
+                if settings.usesLocalReadOnlyAPI {
+                    let client = APIClient(baseURL: base, token: nil)
+                    _ = try await client.localSysInfo()
+                } else if settings.usesProjectCPE {
+                    // project-cpe 没有登录接口，用 /api/health 探活并带出版本号
+                    let version = try await ProjectCPEClient(baseURL: base).health()
+                    probeOK = true
+                    probeResult = "已连通 · v\(version)"
+                    probing = false
+                    return
+                } else {
+                    let client = APIClient(baseURL: base, token: nil)
+                    _ = try await client.info()
+                }
                 probeOK = true
-                probeResult = "已连通 · \(Fmt.orDash(info.hostname))"
+                probeResult = "已连通 · \(settings.port)"
             } catch {
                 probeOK = false
                 probeResult = error.localizedDescription
@@ -661,6 +810,24 @@ struct SettingsView: View {
                 cacheMessage = error.localizedDescription
             }
             clearingCache = false
+        }
+    }
+
+    /// 重启设备。进这个函数前，按钮已经让用户二次确认过。
+    private func reboot() {
+        rebooting = true
+        rebootMessage = nil
+        Task {
+            do {
+                try await engine.rebootDevice()
+                rebootOK = true
+                rebootMessage = "已下发重启指令"
+                confirmReboot = false
+            } catch {
+                rebootOK = false
+                rebootMessage = error.localizedDescription
+            }
+            rebooting = false
         }
     }
 

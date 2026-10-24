@@ -1,5 +1,45 @@
 import Foundation
 
+// MARK: - 9527 免登录只读接口
+
+struct LocalSysInfo: Decodable {
+    struct System: Decodable {
+        var uptime: Double?
+        var totalMemory: Double?
+        var freeMemory: Double?
+    }
+
+    struct Subscription: Decodable {
+        var qci: Int?
+        var dl: Int?
+        var ul: Int?
+    }
+
+    var sys: System
+    var ambr: Subscription?
+
+    var deviceInfo: DeviceInfo {
+        var info = DeviceInfo()
+        info.uptime = sys.uptime
+        // 9527 返回字节，DeviceInfo 使用 MiB。
+        info.totalRam = sys.totalMemory.map { $0 / 1_048_576 }
+        info.freeRam = sys.freeMemory.map { $0 / 1_048_576 }
+        info.qci = ambr?.qci
+        info.downlinkRate = ambr?.dl
+        info.uplinkRate = ambr?.ul
+        return info
+    }
+}
+
+struct LocalTemperature: Decodable {
+    var temp: [String: Double]?
+
+    var celsius: Double? {
+        guard let value = temp?["soc-thmzone"] ?? temp?["nrcp-thmzone"] else { return nil }
+        return value > 100 ? value / 1000 : value
+    }
+}
+
 // MARK: - GET /api/info
 
 /// 设备主状态。字段名严格对应 UDX710-TOOLS `src/handlers/handlers.c` 的 `handle_info`。

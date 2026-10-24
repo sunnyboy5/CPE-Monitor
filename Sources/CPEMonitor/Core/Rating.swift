@@ -107,11 +107,14 @@ enum NetworkGeneration {
         return type.contains("5G") || type.uppercased().contains("NR")
     }
 
-    /// 频段前缀补齐：后端 5G 给 "N78"，4G 给 "B3"
+    /// 频段前缀补齐
+    ///
+    /// 各固件给的写法不统一：旧 6677 给 "78"、project-cpe 给 "n78"/"B3"。
+    /// 统一输出大写（N78 / B3），避免同一个频段在演示数据和真机里长得不一样。
     static func band(_ raw: String?, is5G: Bool) -> String {
         guard let raw, !raw.isEmpty, raw != "N/A" else { return "--" }
         let upper = raw.uppercased()
         if upper.hasPrefix("N") || upper.hasPrefix("B") { return upper }
-        return (is5G ? "n" : "B") + upper
+        return (is5G ? "N" : "B") + upper
     }
 }
